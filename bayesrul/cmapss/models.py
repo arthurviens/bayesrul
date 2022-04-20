@@ -34,11 +34,11 @@ class Linear(nn.Module):
         self.layers = nn.Sequential(
             nn.Flatten(),
             nn.Linear(win_length * n_features, 100),
-            nn.Sigmoid(),
+            nn.ReLU(),
             nn.Linear(100, 100),
-            nn.Sigmoid(),
+            nn.ReLU(),
             nn.Linear(100, 100),
-            nn.Sigmoid(),
+            nn.ReLU(),
             nn.Linear(100, 1),
             nn.Softplus(),
         )

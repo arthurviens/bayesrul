@@ -11,7 +11,7 @@ if __name__ == "__main__":
         out_path="data/cmapss/",
         normalization="min-max",
         validation=0.2,
-        subsets=["FD001"],  # "FD002", "FD003", "FD004"],
+        subsets=["FD001"], #,"FD002", "FD003", "FD004"],
         # win_length={"FD001": 30, "FD002": 20, "FD003": 30, "FD004": 15}, #variable length per subset only ok for LSTM models
         # win_length={
         #     1: 18,
@@ -19,7 +19,7 @@ if __name__ == "__main__":
         #     3: 18,
         #     4: 18,
         # },  # variable length per subset fixed for Linear/Conv models
-        win_length=18,
+        win_length=25,
         win_step=1,
         settings=["setting_1", "setting_2", "setting_3"],
         features=[

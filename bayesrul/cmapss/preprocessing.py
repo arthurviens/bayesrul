@@ -1,7 +1,8 @@
 import logging
+import warnings
 import zipfile
 from pathlib import Path
-from typing import Callable, Dict, Iterator, List, NamedTuple, Union
+from typing import Callable, Dict, Iterator, List, NamedTuple, Union, Tuple, Any
 import os
 
 import numpy as np
@@ -11,7 +12,18 @@ from tqdm.autonotebook import tqdm
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 
-def generate_parquet(args):
+def generate_parquet(args) -> None:
+    """ Generates parquet files in args.out_path
+
+    Parameters
+    ----------
+    arg : SimpleNamespace
+        arguments to forward (out_path, normalization, validation...)
+
+    Returns
+    -------
+    None
+    """
     for subset in args.subsets:
         logging.info("**** %s ****" % subset)
         logging.info("normalization = " + args.normalization)
@@ -33,9 +45,9 @@ def generate_parquet(args):
         )
 
         # Normalization
-        df_train = normalize(df_train, args.normalization)
-        df_val = normalize(df_val, args.normalization)
-        df_test = normalize(df_test, args.normalization)
+        scaler = normalize(df_train, arg=args.normalization)
+        _ = normalize(df_val, scaler=scaler)
+        _ = normalize(df_test, scaler=scaler)
 
         print("Generating parquet files...")
         path = Path(args.out_path, "parquet")
@@ -45,23 +57,55 @@ def generate_parquet(args):
                 df.to_parquet(f"{path}/{prefix}_{subset}.parquet")
 
 
-def normalize(df: pd.DataFrame, arg: str) -> pd.DataFrame:
+def normalize(df: pd.DataFrame, arg="", scaler=None) -> Any:
+    """ Normalizes /!\ inplace a DataFrame. Provide arg or already fitted scaler
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame to normalize.
+    arg : str, optional
+        Which normalizer to use. Either 'minmax' or 'standard'
+    scaler: sklearn.preprocessing scaler
+        Already fitted scaler to use
+
+    Returns
+    -------
+    scaler: sklearn.preprocessing scaler
+        Fitted scaler for re-use.
+
+    Raises
+    ------
+    AssertionError
+        When df is not a pd.DataFrame
+    ValueError
+        When neither arg or scaler is provided
+        When arg is not in ['', 'minmax', 'standard']
+    """
+
     assert isinstance(df, pd.DataFrame), f"{type(df)} is not a DataFrame"
     searchfor = ["sensor", "setting"]
     columns = df.columns[df.columns.str.contains('|'.join(searchfor))] 
     
-    if (arg is None) or (arg == ""):
-        pass
-    elif (arg == 'min-max') or (arg == 'minmax'):
-        scaler = MinMaxScaler()
-        df[columns] = scaler.fit_transform(df[columns])
-    elif arg == 'standard':
-        scaler = StandardScaler()
-        df[columns] = scaler.fit_transform(df[columns])
+    if scaler is None:
+        if (arg is None) or (arg == ""):
+            raise ValueError("No scaler or arg provided in normalize")
+        elif (arg == 'min-max') or (arg == 'minmax'):
+            scaler = MinMaxScaler()
+            df[columns] = scaler.fit_transform(df[columns])
+        elif arg == 'standard':
+            scaler = StandardScaler()
+            df[columns] = scaler.fit_transform(df[columns])
+        else:
+            raise ValueError("Arg must be in ['', 'minmax', 'standard']")
+
     else:
-        raise ValueError("Arg must be in ['', 'min-max', 'standard']")
-    
-    return df
+        if arg != "":
+            warnings.warn("Scaler provided but 'arg' parameter not empty : arg will be ignored")
+        else:
+            df[columns] = scaler.transform(df[columns])
+
+    return scaler
 
 
 def extract_dataframes(
