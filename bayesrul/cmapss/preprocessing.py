@@ -52,7 +52,7 @@ def normalize(df: pd.DataFrame, arg: str) -> pd.DataFrame:
     
     if (arg is None) or (arg == ""):
         pass
-    elif arg == 'min-max':
+    elif (arg == 'min-max') or (arg == 'minmax'):
         scaler = MinMaxScaler()
         df[columns] = scaler.fit_transform(df[columns])
     elif arg == 'standard':
