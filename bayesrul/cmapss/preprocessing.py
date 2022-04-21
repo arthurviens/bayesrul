@@ -1,14 +1,16 @@
-import logging
 import warnings
+from typing import Any 
+
+import logging
 import zipfile
 from pathlib import Path
-from typing import Callable, Dict, Iterator, List, NamedTuple, Union, Tuple, Any
-import os
+from typing import Callable, Dict, Iterator, List, NamedTuple, Union
 
 import numpy as np
 import pandas as pd
 from ..utils.lmdb_utils import create_lmdb
 from tqdm.autonotebook import tqdm
+
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 
@@ -45,9 +47,9 @@ def generate_parquet(args) -> None:
         )
 
         # Normalization
-        scaler = normalize(df_train, arg=args.normalization)
-        _ = normalize(df_val, scaler=scaler)
-        _ = normalize(df_test, scaler=scaler)
+        scaler = normalize_cmapss(df_train, arg=args.normalization)
+        _ = normalize_cmapss(df_val, scaler=scaler)
+        _ = normalize_cmapss(df_test, scaler=scaler)
 
         print("Generating parquet files...")
         path = Path(args.out_path, "parquet")
@@ -57,8 +59,8 @@ def generate_parquet(args) -> None:
                 df.to_parquet(f"{path}/{prefix}_{subset}.parquet")
 
 
-def normalize(df: pd.DataFrame, arg="", scaler=None) -> Any:
-    """ Normalizes /!\ inplace a DataFrame. Provide arg or already fitted scaler
+def normalize_cmapss(df: pd.DataFrame, arg="", scaler=None) -> Any:
+    """ Normalizes a DataFrame IN PLACE. Provide arg or already fitted scaler
 
     Parameters
     ----------
@@ -106,6 +108,7 @@ def normalize(df: pd.DataFrame, arg="", scaler=None) -> Any:
             df[columns] = scaler.transform(df[columns])
 
     return scaler
+
 
 
 def extract_dataframes(
