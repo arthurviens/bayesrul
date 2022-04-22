@@ -1,7 +1,8 @@
 import logging
 import warnings
-from typing import List, Any
+from typing import List, Any, NamedTuple, Callable, Dict, Iterator, Union
 from pathlib import Path
+from tqdm import tqdm
 
 import numpy as np
 import pandas as pd
@@ -9,6 +10,7 @@ import h5py
 import os
 
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from ..utils.lmdb_utils import create_lmdb
 
 ncmapss_files = ["N-CMAPSS_DS01-005",
     "N-CMAPSS_DS02-006",
@@ -21,6 +23,21 @@ ncmapss_files = ["N-CMAPSS_DS01-005",
     "N-CMAPSS_DS08c-008",
     "N-CMAPSS_DS08d-010"
 ]
+
+ncmapss_data = ['X_s', 'X_v', 'T', 'A']
+
+ncmapss_datanames = {
+    'W': ['alt', 'Mach', 'TRA', 'T2'],
+    'X_s': ['T24', 'T30', 'T48', 'T50', 'P15', 'P2', 'P21', 'P24', 
+        'Ps30', 'P40', 'P50', 'Nf', 'Nc', 'Wf'],
+    'X_v': ['T40', 'P30', 'P45', 'W21', 'W22', 'W25', 'W31', 'W32', 'W48', 
+        'W50', 'SmFan', 'SmLPC', 'SmHPC', 'phi'],
+    'T': ['fan_eff_mod', 'fan_flow_mod', 'LPC_eff_mod', 'LPC_flow_mod',
+        'HPC_eff_mod', 'HPC_flow_mod', 'HPT_eff_mod', 'HPT_flow_mod',
+        'LPT_eff_mod', 'LPT_flow_mod'],
+    'A': ['unit', 'cycle', 'Fc', 'hs'],
+    'Y': ['rul']
+}
 
 
 def generate_parquet(args) -> None:
@@ -161,7 +178,7 @@ def choose_units_for_validation(unit_repartition, validation) -> List[int]:
 
 
 def extract_validation(
-    filepath, vars = ['W', 'X_s', 'X_v', 'T', 'A'], validation=0.00
+    filepath, vars = ['X_s', 'X_v', 'T', 'A'], validation=0.00
 ):
     """Extract train, validation and test dataframe from source file.
 
@@ -200,7 +217,7 @@ def extract_validation(
     return df_train, df_val, df_test
 
 
-def _load_data_from_file(filepath, vars = ['W', 'X_s', 'X_v', 'T', 'A']):
+def _load_data_from_file(filepath, vars = ['X_s', 'X_v', 'T', 'A']):
     """Load data from source file into a dataframe.
 
     Parameters
@@ -208,20 +225,22 @@ def _load_data_from_file(filepath, vars = ['W', 'X_s', 'X_v', 'T', 'A']):
     file : str
         Source file.
     vars : list
-        May contain 'W', 'X_s', 'X_v', 'T', 'A'
-        W: Scenario Descriptors
+        May contain 'X_s', 'X_v', 'T', 'A'
+        W: Scenario Descriptors (always included)
         X_s: Measurements
         X_v: Virtual sensors
         T: Health Parameters
         A: Auxiliary Data
+        Y: rul (always included)
 
     Returns
     -------
     DataFrame
         Data organized into a dataframe.
     """
-    assert all([x in ['W', 'X_s', 'X_v', 'T', 'A'] for x in vars]), \
-        "Wrong vars provided, choose a subset of ['W', 'X_s', 'X_v', 'T', 'A']"
+
+    assert all([x in ['X_s', 'X_v', 'T', 'A'] for x in vars]), \
+        "Wrong vars provided, choose a subset of ['X_s', 'X_v', 'T', 'A']"
     assert any([x in filepath for x in ncmapss_files]), "Incorrect file name {}"\
         .format(filepath)
 
@@ -234,18 +253,18 @@ def _load_data_from_file(filepath, vars = ['W', 'X_s', 'X_v', 'T', 'A']):
         test = []
         varnames = []
 
-        if 'W' in vars: 
-            dev.append(np.array(hdf.get('W_dev')))             
-            test.append(np.array(hdf.get('W_test')))
-            varnames.extend(hdf.get('W_var'))
+        dev.append(np.array(hdf.get('W_dev')))             
+        test.append(np.array(hdf.get('W_test')))
+        varnames.extend(hdf.get('W_var'))
+
         if 'X_s' in vars:
             dev.append(np.array(hdf.get('X_s_dev')))             
             test.append(np.array(hdf.get('X_s_test')))
             varnames.extend(hdf.get('X_s_var'))
-        if 'X_t' in vars:
-            dev.append(np.array(hdf.get('X_t_dev')))             
-            test.append(np.array(hdf.get('X_t_test')))
-            varnames.extend(hdf.get('X_t_var'))
+        if 'X_v' in vars:
+            dev.append(np.array(hdf.get('X_v_dev')))             
+            test.append(np.array(hdf.get('X_v_test')))
+            varnames.extend(hdf.get('X_v_var'))
         if 'T' in vars:
             dev.append(np.array(hdf.get('T_dev')))             
             test.append(np.array(hdf.get('T_test')))
@@ -277,4 +296,128 @@ def _load_data_from_file(filepath, vars = ['W', 'X_s', 'X_v', 'T', 'A']):
     return df_train, df_test
 
 
+def generate_lmdb(args, datasets=["train", "val", "test"]) -> None:
+    """ Parquet files to lmdb files
+    """
+    lmdb_dir = Path(f"{args.out_path}/lmdb")
+    lmdb_dir_files = [x for x in lmdb_dir.iterdir()]
+    if len(lmdb_dir_files) > 0:
+        warnings.warn(f"{lmdb_dir} is not empty. Generation will not overwrite"
+            " the previously generated .lmdb files. It will append data.")
+    lmdb_dir.mkdir(exist_ok=True)
+    for ds in datasets:
+        print(f"Generating {ds} lmdb ...")
+        filelist = list(Path(f"{args.out_path}/parquet").glob(f"{ds}*.parquet"))
+        if filelist is not None:
+            feed_lmdb(Path(f"{lmdb_dir}/{ds}.lmdb"), filelist, args)
+
+
+class Line(NamedTuple): # An N-CMAPSS Line
+    ds_id: int              # train, test, val
+    unit_id: int            # Which unit
+    win_id: int             # Window id
+    settings: np.ndarray    # W
+    data: np.ndarray        # X_s, X_v, T, A (not necessarily all of them)
+    rul: int                # Y
+
+
+def feed_lmdb(output_lmdb: Path, filelist: List[Path], args) -> None:
+    patterns: Dict[str, Callable[[Line], Union[bytes, np.ndarray]]] = {
+        "{}": (
+            lambda line: line.data.astype(np.float32) if args.bits == 32 else line.data
+        ),
+        "ds_id_{}": (lambda line: "{}".format(line.ds_id).encode()),
+        "unit_id_{}": (lambda line: "{}".format(line.unit_id).encode()),
+        "win_id_{}": (lambda line: "{}".format(line.win_id).encode()),
+        "settings_{}": (
+            lambda line: line.settings.astype(np.float32)
+            if args.bits == 32
+            else line.settings
+        ),
+        "rul_{}": (lambda line: "{}".format(line.rul).encode()),
+    }
+
+    args.settings = ncmapss_datanames['W']
+    args.features = []
+    for key in ncmapss_datanames: 
+        if (key == 'Y') or (key not in args.subdata): continue
+        else: args.features.extend(ncmapss_datanames[key])
     
+    return create_lmdb(
+        filename=output_lmdb,
+        iterator=process_files(filelist, args),
+        patterns=patterns,
+        aggs=[MinMaxAggregate(args)],
+        win_length=args.win_length,
+        n_features=len(args.features),
+        bits=args.bits,
+    )
+
+
+def process_files(filelist: List[Path], args) -> Iterator[Line]:
+    for filename in tqdm(filelist):
+        df = pd.read_parquet(filename)
+        if hasattr(args, 'skip_obs'):
+            df = df[::args.skip_obs]
+        args.subset = int(str(filename.stem).split('_')[-1][3])
+        yield from process_dataframe(df, args)
+        del df
+
+
+def process_dataframe(df: pd.DataFrame, args) -> Iterator[Line]:
+    win_length = (
+        args.win_length[args.subset]
+        if isinstance(args.win_length, dict)
+        else args.win_length
+    )
+    for unit_id, traj in tqdm(df.groupby("unit"), leave=False, position=1):
+        for i, sl in enumerate(tqdm(make_slice(traj.shape[0], win_length, 
+                args.win_step), leave=False, 
+                total=traj.shape[0]/args.win_step, position=2)):
+
+            yield Line(
+                ds_id=args.subset,
+                unit_id=unit_id,
+                win_id=i,
+                settings=traj[args.settings].iloc[sl].unstack().values,
+                data=traj[args.features].iloc[sl].unstack().values,
+                rul=traj["rul"].iloc[sl].iloc[-1],
+            )
+
+
+
+def make_slice(total: int, size: int, step: int) -> Iterator[slice]:
+    for i in range(total // step):
+        if i * step + size < total:
+            yield slice(i * step, i * step + size)
+        if i * step + size >= total:
+            yield slice(total - size, total)
+            return
+
+
+class MinMaxAggregate:
+    def __init__(self, args):
+        self.args = args
+
+    def feed(self, line: Line, i: int) -> None:
+        n_features = len(self.args.features)
+        min_, max_ = (
+            line.data.reshape(n_features, -1).T,
+            line.data.reshape(n_features, -1).T,
+        )
+
+        if i == 0:
+            self.min_, self.max_ = min_.min(0), max_.max(0)
+        else:
+            self.min_ = np.min([self.min_, min_.min(0)], axis=0)
+            self.max_ = np.max([self.max_, max_.max(0)], axis=0)
+
+    def get(self) -> Dict[str, Union[np.ndarray, bytes]]:
+        return {
+            "min_sample": self.min_.astype(
+                np.float32 if self.args.bits == 32 else np.float64
+            ),
+            "max_sample": self.max_.astype(
+                np.float32 if self.args.bits == 32 else np.float64
+            ),
+        }

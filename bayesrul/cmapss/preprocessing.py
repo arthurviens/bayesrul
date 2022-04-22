@@ -262,6 +262,7 @@ def feed_lmdb(output_lmdb: Path, filelist: List[Path], args) -> None:
         ),
         "rul_{}": (lambda line: "{}".format(line.rul).encode()),
     }
+    print(patterns)
 
     return create_lmdb(
         filename=output_lmdb,
