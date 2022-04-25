@@ -142,3 +142,15 @@ class LmdbDataset(Dataset):
                 return np.frombuffer(value, dtype=dtype)
         else:
             return value.decode() if value is not None else None
+
+
+
+def make_slice(total: int, size: int, step: int) -> Iterator[slice]:
+    for i in range(total // step):
+        if i * step + size < total:
+            yield slice(i * step, i * step + size)
+        if i * step + size >= total:
+            yield slice(total - size, total)
+            return
+
+

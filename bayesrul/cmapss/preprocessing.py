@@ -8,7 +8,7 @@ from typing import Callable, Dict, Iterator, List, NamedTuple, Union
 
 import numpy as np
 import pandas as pd
-from ..utils.lmdb_utils import create_lmdb
+from ..utils.lmdb_utils import create_lmdb, make_slice
 from tqdm.autonotebook import tqdm
 
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
@@ -262,6 +262,7 @@ def feed_lmdb(output_lmdb: Path, filelist: List[Path], args) -> None:
         ),
         "rul_{}": (lambda line: "{}".format(line.rul).encode()),
     }
+    print(patterns)
 
     return create_lmdb(
         filename=output_lmdb,
@@ -307,15 +308,6 @@ def process_dataframe(df: pd.DataFrame, args) -> Iterator[Line]:
                 data=traj[args.features].iloc[sl].unstack().values,
                 rul=traj["rul"].iloc[sl].iloc[-1],
             )
-
-
-def make_slice(total: int, size: int, step: int) -> Iterator[slice]:
-    for i in range(total // step):
-        if i * step + size < total:
-            yield slice(i * step, i * step + size)
-        if i * step + size >= total:
-            yield slice(total - size, total)
-            return
 
 
 class MinMaxAggregate:

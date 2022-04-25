@@ -35,3 +35,9 @@ def test_normalize_cmapss():
     assert np.linalg.norm(df_standard_calc - df_standard_true) <= 1e-5
     assert np.linalg.norm(df_minmax_calc - df_minmax_true) <= 1e-5
     assert np.linalg.norm(df - df_minmax_true) <= 1e-5
+
+    with pytest.raises(ValueError):
+        normalize_cmapss(df, arg="itshouldfail")
+    with pytest.raises(ValueError):
+        normalize_cmapss(df)
+

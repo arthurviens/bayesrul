@@ -37,6 +37,11 @@ def test_normalize_ncmapss():
     assert np.linalg.norm(df_minmax_calc - df_minmax_true) <= 1e-5
     assert np.linalg.norm(df - df_minmax_true) <= 1e-5
 
+    with pytest.raises(ValueError):
+        normalize_ncmapss(df, arg="itshouldfail")
+    with pytest.raises(ValueError):
+        normalize_ncmapss(df)
+
 
 def test_choose_units_for_validation():
     # Test error throws
