@@ -10,7 +10,18 @@ import h5py
 import os
 
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from ..utils.lmdb_utils import create_lmdb
+from ..utils.lmdb_utils import create_lmdb, make_slice
+
+################################################################################
+################################################################################
+#
+# Add preprocessing for 'A' subset : one-hot or entity embedding for flight 
+# class etc.
+#
+################################################################################
+################################################################################
+
+
 
 ncmapss_files = ["N-CMAPSS_DS01-005",
     "N-CMAPSS_DS02-006",
@@ -62,6 +73,7 @@ def generate_parquet(args) -> None:
         print("Extracting dataframes...")
         df_train, df_val, df_test = extract_validation(
             filepath=filepath,
+            vars=args.subdata,
             validation=args.validation,
         )
 
@@ -300,11 +312,11 @@ def generate_lmdb(args, datasets=["train", "val", "test"]) -> None:
     """ Parquet files to lmdb files
     """
     lmdb_dir = Path(f"{args.out_path}/lmdb")
+    lmdb_dir.mkdir(exist_ok=True)
     lmdb_dir_files = [x for x in lmdb_dir.iterdir()]
     if len(lmdb_dir_files) > 0:
         warnings.warn(f"{lmdb_dir} is not empty. Generation will not overwrite"
             " the previously generated .lmdb files. It will append data.")
-    lmdb_dir.mkdir(exist_ok=True)
     for ds in datasets:
         print(f"Generating {ds} lmdb ...")
         filelist = list(Path(f"{args.out_path}/parquet").glob(f"{ds}*.parquet"))
@@ -383,17 +395,6 @@ def process_dataframe(df: pd.DataFrame, args) -> Iterator[Line]:
                 data=traj[args.features].iloc[sl].unstack().values,
                 rul=traj["rul"].iloc[sl].iloc[-1],
             )
-
-
-
-def make_slice(total: int, size: int, step: int) -> Iterator[slice]:
-    for i in range(total // step):
-        if i * step + size < total:
-            yield slice(i * step, i * step + size)
-        if i * step + size >= total:
-            yield slice(total - size, total)
-            return
-
 
 class MinMaxAggregate:
     def __init__(self, args):

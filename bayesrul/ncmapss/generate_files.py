@@ -8,12 +8,12 @@ if __name__ == "__main__":
         normalization = "min-max",
         validation = 0.2,
         files = ["N-CMAPSS_DS02-006"],
-        subdata = ['X_s', 'X_v', 'T', 'A'],
+        subdata = ['X_s', 'A'],
         win_length=25,
         win_step=10,
         skip_obs=10,
         bits = 32,
     )
 
-    #generate_parquet(args)
+    generate_parquet(args)
     generate_lmdb(args)

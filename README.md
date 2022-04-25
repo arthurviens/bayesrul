@@ -1,6 +1,5 @@
 # Bayesrul
 
-Based on https://github.com/lbasora/bnnrul
 
 ## Setup 
 
@@ -26,9 +25,9 @@ Use poetry to install dependencies
 poetry install
 ```
 
-## Generate dataset lmdb files
+## Generate dataset lmdb files for CMAPSS
 Make sure to have the CMAPSS dataset at `data/CMAPSSData.zip`
-Launch the scripts
+Launch the script
 ```
 python -m bayesrul.cmapss.generate_files
 ```
@@ -36,3 +35,17 @@ It will create the necessary parquet and lmdb files used later on. You can tweak
 
 You now should have `data/cmapss/lmdb` directory.
 You're all set !
+
+## Generate dataset lmdb files for N-CMAPSS
+Make sure to have the CMAPSS dataset files at `data/ncmapss/N-CMAPSS_DS02-006.h5` (you can use other subsets by modifying arguments in `bayesful/ncmapss/generate_files.py`)
+
+Launch the script
+```
+python -m bayesrul.ncmapss.generate_files
+```
+It will create the necessary parquet and lmdb files used later on. Parquet files are used to create lmdb files but are useless otherwise for now.
+
+You now should have `data/ncmapss/lmdb` directory, with all that is needed inside.
+
+
+Parts of the code have been borrowed on https://github.com/lbasora/bnnrul

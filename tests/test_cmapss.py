@@ -40,3 +40,4 @@ def test_normalize_cmapss():
         normalize_cmapss(df, arg="itshouldfail")
     with pytest.raises(ValueError):
         normalize_cmapss(df)
+

@@ -34,10 +34,13 @@ class Linear(nn.Module):
         self.layers = nn.Sequential(
             nn.Flatten(),
             nn.Linear(win_length * n_features, 100),
+            nn.Dropout(p=0.4),
             nn.ReLU(),
             nn.Linear(100, 100),
+            nn.Dropout(p=0.4),
             nn.ReLU(),
             nn.Linear(100, 100),
+            nn.Dropout(p=0.4),
             nn.ReLU(),
             nn.Linear(100, 1),
             nn.Softplus(),
@@ -76,6 +79,7 @@ class NCMAPSSModel(pl.LightningModule):
         net="linear",
         lr=1e-3,
         weight_decay=1e-5,
+        loss='mse'
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -85,18 +89,29 @@ class NCMAPSSModel(pl.LightningModule):
             self.net = Conv(win_length, n_features)
         else:
             raise ValueError(f"Model architecture {net} not implemented")
+
+        if (loss == 'mse') or (loss == 'MSE'):
+            self.loss = F.mse_loss
+            self.loss_name = 'mse'
+        elif (loss == 'l1') or (loss == 'L1'):
+            self.loss = F.l1_loss
+            self.loss_name = 'l1'
+        else:
+            raise ValueError(f"Loss {loss} not supported. Choose from"
+                " ['mse', 'l1']")
+        
         self.lr = lr
         self.weight_decay = weight_decay
 
     def forward(self, x):
         return self.net(x)
 
-    def _compute_loss(self, batch, phase):
+    def _compute_loss(self, batch, phase): # More generic for other losses
         (x, y) = batch
         y = y.view(-1, 1)
         y_hat = self.net(x)
-        loss = F.mse_loss(y_hat, y)
-        self.log(f"loss/{phase}", loss)
+        loss = self.loss(y_hat, y)
+        self.log(f"{self.loss_name}_loss/{phase}", loss)
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -106,7 +121,9 @@ class NCMAPSSModel(pl.LightningModule):
         return self._compute_loss(batch, "val")
 
     def test_step(self, batch, batch_idx):
-        return self._compute_loss(batch, "test")
+        loss = self._compute_loss(batch, "test")
+        return loss 
+
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
@@ -167,7 +184,9 @@ class NCMAPSSModelBnn(NCMAPSSModel):
         ).mean(dim=0)
 
     def test_step(self, batch, batch_idx):
-        return torch.stack(
+        losses = torch.stack(
             [self._compute_loss(batch, "test") for _ in range(self.num_predictions)]
-        ).mean(dim=0)
+        )
+        self.log(f'loss_std/test', losses.std(dim=0))
         # TODO STD, CI
+        return losses.mean(dim=0)
