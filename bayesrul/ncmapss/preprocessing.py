@@ -91,6 +91,42 @@ def generate_parquet(args) -> None:
 
 
 
+def generate_unittest_subsample(args, vars=['X_s', 'A']) -> None:
+    """ Generates parquet file in args.out_path. 
+    Called by hand in dev -> Not used in project  
+
+    Parameters
+    ----------
+    arg : SimpleNamespace
+        arguments to forward (out_path, normalization, validation...)
+
+    Returns
+    -------
+    None
+    """
+    filename = args.files[0]
+    
+    filepath = os.path.join(args.out_path, filename)
+
+    df_train, df_test = _load_data_from_file(filepath, vars=vars)
+    df_train = df_train[::10000] # Huge downsample
+    df_test = df_test[::10000]
+
+    df_train = linear_piece_wise_RUL(df_train.copy(), drop_hs=False)
+    df_test = linear_piece_wise_RUL(df_test.copy(), drop_hs=False)
+
+    # Normalization
+    scaler = normalize_ncmapss(df_train, arg=args.normalization)
+    _ = normalize_ncmapss(df_test, scaler=scaler)
+
+    path = Path(args.test_path, "parquet/")
+    path.mkdir(exist_ok=True)
+    for df, prefix in zip([df_train, df_test], ["train", "test"]):
+        if isinstance(df, pd.DataFrame):
+            df.to_parquet(f"{path}/{prefix}_{filename}.parquet")
+
+
+
 def normalize_ncmapss(df: pd.DataFrame, arg="", scaler=None) -> Any:
     """ Normalizes a DataFrame IN PLACE. Provide arg or already fitted scaler
 
@@ -188,7 +224,7 @@ def choose_units_for_validation(unit_repartition, validation) -> List[int]:
     return units
 
 
-def linear_piece_wise_RUL(df: pd.DataFrame) -> pd.DataFrame:
+def linear_piece_wise_RUL(df: pd.DataFrame, drop_hs=True) -> pd.DataFrame:
     """ Corrects the RUL label. Uses the Health State to change RUL  
         into piece-wise linear RUL (reduces overfitting on the healthy part)
 
@@ -221,7 +257,10 @@ def linear_piece_wise_RUL(df: pd.DataFrame) -> pd.DataFrame:
     assert df.isna().sum().sum() == 0, "NaNs in df, on columns {}"\
         .format(df.isna().sum()[df.isna().sum() >= 1].index.values.tolist())
     
-    return df.drop(columns=['hs'])
+    if drop_hs:
+        df.drop(columns=['hs'], inplace=True)
+
+    return df
 
 
 def extract_validation(

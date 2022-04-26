@@ -1,10 +1,11 @@
 from types import SimpleNamespace
-from .preprocessing import generate_parquet, generate_lmdb
+from .preprocessing import generate_parquet, generate_lmdb, generate_unittest_subsample
 
 
 if __name__ == "__main__":
     args = SimpleNamespace(
         out_path = "data/ncmapss/",
+        test_path = "tests/",
         normalization = "min-max",
         validation = 0.2,
         files = ["N-CMAPSS_DS02-006"],
@@ -17,3 +18,4 @@ if __name__ == "__main__":
 
     generate_parquet(args)
     generate_lmdb(args)
+    generate_unittest_subsample(args) # To create unit test parquets
