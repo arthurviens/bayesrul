@@ -5,6 +5,7 @@ import numpy as np
 
 from bayesrul.ncmapss.preprocessing import normalize_ncmapss
 from bayesrul.ncmapss.preprocessing import choose_units_for_validation
+from bayesrul.ncmapss.preprocessing import linear_piece_wise_RUL
 
 
 def test_normalize_ncmapss():
@@ -66,3 +67,35 @@ def test_choose_units_for_validation():
     rep = pd.Series([0.31, 0.28, 0.31, 0.1])
     units = choose_units_for_validation(rep, 0.2)
     assert units[0] == 1
+
+
+def test_linear_piece_wise_RUL():
+    df = pd.DataFrame()
+    with pytest.raises(KeyError):
+        linear_piece_wise_RUL(df)
+
+    columns = ['data', 'unit', 'hs', 'rul']
+    df = pd.DataFrame(
+        data = np.array([np.random.normal(size=10),
+                        [11]*10, 
+                        [1]*5 + [0] * 5, 
+                        list(range(10, 0, -1))]).T,
+        columns=columns
+    )
+    
+    df = pd.concat([df, 
+        pd.DataFrame(
+            data = np.array([np.random.normal(size=10),
+                    [15]*10, 
+                    [1]*3 + [0] * 7, 
+                    list(range(10, 0, -1))]).T,
+            columns=columns
+        )
+    ]).reset_index(drop=True)
+
+    new_df = linear_piece_wise_RUL(df)
+
+    assert all(new_df['rul'] == [6.0]*5 + list(range(5, 0, -1))
+                            + [8.0]*3 + list(range(7, 0, -1)))
+
+    assert 'hs' not in new_df.columns

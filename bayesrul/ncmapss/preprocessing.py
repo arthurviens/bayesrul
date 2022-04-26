@@ -46,7 +46,7 @@ ncmapss_datanames = {
     'T': ['fan_eff_mod', 'fan_flow_mod', 'LPC_eff_mod', 'LPC_flow_mod',
         'HPC_eff_mod', 'HPC_flow_mod', 'HPT_eff_mod', 'HPT_flow_mod',
         'LPT_eff_mod', 'LPT_flow_mod'],
-    'A': ['unit', 'cycle', 'Fc', 'hs'],
+    'A': ['Fc'],  # ['unit', 'cycle', 'hs'] removed because not judged relevant
     'Y': ['rul']
 }
 
@@ -142,7 +142,6 @@ def normalize_ncmapss(df: pd.DataFrame, arg="", scaler=None) -> Any:
     return scaler
 
 
-
 def choose_units_for_validation(unit_repartition, validation) -> List[int]:
     """Chooses which test unit to put in val set according to wanted val %. 
 
@@ -189,6 +188,42 @@ def choose_units_for_validation(unit_repartition, validation) -> List[int]:
     return units
 
 
+def linear_piece_wise_RUL(df: pd.DataFrame) -> pd.DataFrame:
+    """ Corrects the RUL label. Uses the Health State to change RUL  
+        into piece-wise linear RUL (reduces overfitting on the healthy part)
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame to correct.
+
+    Returns
+    -------
+    df : pd.DataFrame
+        Corrected dataframe
+
+    Raises
+    ------
+    KeyError:
+        When 'A' subset is not selected and extract_validation bypassed
+    """
+    healthy = df[['unit', 'hs', 'rul']] # to reduce memory footprint
+    healthy = df[df.hs == 1]            # Filter on healthy
+    
+    mergedhealthy = healthy.merge(healthy.groupby(['unit', 'hs'])['rul'].min(), 
+        how='inner', on=['unit', 'hs']) # Compute the max linear rul
+    df = df.merge(mergedhealthy, how='left', on=list(df.columns[:-1]))\
+        .drop(columns=['rul_x'])        # Put it back on original dataframe
+    df.rul_y.fillna(df['rul'], inplace=True)    # True RUL values on NaNs
+    df.drop(columns=['rul'], inplace=True)      
+    df.rename({'rul_y': 'rul'}, axis=1, inplace=True)
+
+    assert df.isna().sum().sum() == 0, "NaNs in df, on columns {}"\
+        .format(df.isna().sum()[df.isna().sum() >= 1].index.values.tolist())
+    
+    return df.drop(columns=['hs'])
+
+
 def extract_validation(
     filepath, vars = ['X_s', 'X_v', 'T', 'A'], validation=0.00
 ):
@@ -214,12 +249,23 @@ def extract_validation(
 
     df_train, df_test = _load_data_from_file(filepath, vars=vars)
     
-    # Percentage of datapoints across all units
+    if 'A' in vars:
+        df_train = linear_piece_wise_RUL(df_train.copy())  # RUL modified in-place
+        df_test = linear_piece_wise_RUL(df_test.copy())    # RUL modified in-place
+    else:
+        warnings.warn("'A' auxiliary variables subset was not selected."
+            " RUL label will not be transformed to piece-wise linear because "
+            " health state (hs) belongs to the auxiliary subset. ")
+
+    # Percentage of datapoints across all units (engines)
     unit_repartition = df_train.groupby('unit')['rul'].count() \
         / df_train.groupby('unit')['rul'].count().sum()
 
+    # Splits the train set into val + train
     if validation > 0:
+        # Choose which engines to put in val set
         units = choose_units_for_validation(unit_repartition, validation)
+        # Perform the transfer of the chosen units data
         df_val = df_train[df_train.unit.isin(units)]
         df_train = df_train[~(df_train.unit.isin(units))]
 
@@ -349,12 +395,14 @@ def feed_lmdb(output_lmdb: Path, filelist: List[Path], args) -> None:
         "rul_{}": (lambda line: "{}".format(line.rul).encode()),
     }
 
-    args.settings = ncmapss_datanames['W']
+    args.settings = [] # args.settings = ncmapss_datanames['W']
     args.features = []
+    args.features.extend(ncmapss_datanames['W']) # We treat W as input data
     for key in ncmapss_datanames: 
         if (key == 'Y') or (key not in args.subdata): continue
         else: args.features.extend(ncmapss_datanames[key])
     
+
     return create_lmdb(
         filename=output_lmdb,
         iterator=process_files(filelist, args),
@@ -395,6 +443,7 @@ def process_dataframe(df: pd.DataFrame, args) -> Iterator[Line]:
                 data=traj[args.features].iloc[sl].unstack().values,
                 rul=traj["rul"].iloc[sl].iloc[-1],
             )
+
 
 class MinMaxAggregate:
     def __init__(self, args):

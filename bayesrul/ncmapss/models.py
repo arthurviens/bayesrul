@@ -99,7 +99,7 @@ class NCMAPSSModel(pl.LightningModule):
         else:
             raise ValueError(f"Loss {loss} not supported. Choose from"
                 " ['mse', 'l1']")
-        
+                
         self.lr = lr
         self.weight_decay = weight_decay
 
