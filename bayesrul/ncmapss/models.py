@@ -33,17 +33,16 @@ class Linear(nn.Module):
         super().__init__()
         self.layers = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(win_length * n_features, 100),
-            nn.Dropout(p=0.4),
+            nn.Linear(win_length * n_features, 128),
+            nn.Dropout(p=0.3),
             nn.ReLU(),
-            nn.Linear(100, 100),
-            nn.Dropout(p=0.4),
+            nn.Linear(128, 128),
+            nn.Dropout(p=0.3),
             nn.ReLU(),
-            nn.Linear(100, 100),
-            nn.Dropout(p=0.4),
+            nn.Linear(128, 64),
+            nn.Dropout(p=0.3),
             nn.ReLU(),
-            nn.Linear(100, 1),
-            nn.Softplus(),
+            nn.Linear(64, 1)
         )
 
     def forward(self, x):
@@ -63,8 +62,7 @@ class Conv(nn.Module):
             nn.Flatten(),
             nn.Linear(
                 14 * int((((win_length - 4) / 2) - 1) / 2) * (n_features - 13), 1
-            ),
-            nn.Softplus(),
+            )
         )
 
     def forward(self, x):
@@ -78,7 +76,7 @@ class NCMAPSSModel(pl.LightningModule):
         n_features,
         net="linear",
         lr=1e-3,
-        weight_decay=1e-5,
+        weight_decay=1e-3,
         loss='mse'
     ):
         super().__init__()
@@ -91,28 +89,33 @@ class NCMAPSSModel(pl.LightningModule):
             raise ValueError(f"Model architecture {net} not implemented")
 
         if (loss == 'mse') or (loss == 'MSE'):
-            self.loss = F.mse_loss
-            self.loss_name = 'mse'
+            self.criterion = F.mse_loss
+            self.loss = 'mse'
         elif (loss == 'l1') or (loss == 'L1'):
-            self.loss = F.l1_loss
-            self.loss_name = 'l1'
+            self.criterion = F.l1_loss
+            self.loss = 'l1'
         else:
             raise ValueError(f"Loss {loss} not supported. Choose from"
                 " ['mse', 'l1']")
                 
         self.lr = lr
         self.weight_decay = weight_decay
+        self.test_preds = {'preds': [], 'labels': []}
+        weights_init(self)
 
     def forward(self, x):
         return self.net(x)
 
-    def _compute_loss(self, batch, phase): # More generic for other losses
+    def _compute_loss(self, batch, phase, return_pred=False): 
         (x, y) = batch
         y = y.view(-1, 1)
         y_hat = self.net(x)
-        loss = self.loss(y_hat, y)
-        self.log(f"{self.loss_name}_loss/{phase}", loss)
-        return loss
+        loss = self.criterion(y_hat, y)
+        self.log(f"{self.loss}_loss/{phase}", loss)
+        if return_pred:
+            return loss, y_hat
+        else:
+            return loss
 
     def training_step(self, batch, batch_idx):
         return self._compute_loss(batch, "train")
@@ -121,8 +124,21 @@ class NCMAPSSModel(pl.LightningModule):
         return self._compute_loss(batch, "val")
 
     def test_step(self, batch, batch_idx):
-        loss = self._compute_loss(batch, "test")
-        return loss 
+        loss, pred = self._compute_loss(batch, "test", return_pred=True)
+                
+        return {'loss': loss, 'label': batch[1], 'pred': pred} 
+
+    def test_epoch_end(self, outputs):
+        preds = []
+        #stds = []
+        labels = []
+        for output in outputs:
+            preds.extend(list(output['pred'].flatten().cpu().detach().numpy()))
+            #stds.extend(list(output['std'].cpu().detach().numpy()))
+            labels.extend(list(output['label'].cpu().detach().numpy()))
+        
+        self.test_preds['preds'].extend(preds)
+        self.test_preds['labels'].extend(labels)
 
 
     def configure_optimizers(self):
@@ -137,6 +153,9 @@ class NCMAPSSModel(pl.LightningModule):
         parser.add_argument("--net", type=str, default="linear")
         return parent_parser
 
+###############################################################################
+##### BNN 
+###############################################################################
 
 class NCMAPSSModelBnn(NCMAPSSModel):
     # Basic implementation example with bayesian-pytorch
@@ -148,25 +167,27 @@ class NCMAPSSModelBnn(NCMAPSSModel):
         net="linear",
         const_bnn_prior_parameters=None,
         num_mc_samples_elbo=1,
-        num_predictions=1,
+        num_predictions=50,
         lr=1e-3,
         weight_decay=1e-5,
+        loss='mse'
     ):
-        super().__init__(win_length, n_features, net, lr, weight_decay)
+        super().__init__(win_length, n_features, net, lr, weight_decay, loss)
         self.num_mc_samples_elbo = num_mc_samples_elbo
         self.num_predictions = num_predictions
         if const_bnn_prior_parameters is not None:
             dnn_to_bnn(self, const_bnn_prior_parameters)
 
+
     def _compute_loss(self, batch, phase):
         (x, y) = batch
         y = y.view(-1, 1)
         y_hat = self.net(x)
-        mse_loss = F.mse_loss(y_hat, y)
+        loss = self.criterion(y_hat, y)
         kl = get_kl_loss(self)
-        loss = mse_loss + kl / len(batch)
+        loss = loss + kl / len(batch)
         self.log(f"loss/{phase}", loss)
-        self.log(f"loss_mse/{phase}", mse_loss)
+        self.log(f"loss_mse/{phase}", loss)
         self.log(f"loss_kl/{phase}", kl / len(batch))
         return loss
 
@@ -189,4 +210,22 @@ class NCMAPSSModelBnn(NCMAPSSModel):
         )
         self.log(f'loss_std/test', losses.std(dim=0))
         # TODO STD, CI
-        return losses.mean(dim=0)
+        
+        return {'mean': losses.mean(dim=0), 'std': None, 'label': batch[1]} 
+
+    def test_epoch_end(self, outputs) -> None:
+        means = []
+        #stds = []
+        labels = []
+        for output in outputs:
+            means.extend(list(output['mean'].cpu().detach().numpy()))
+            #stds.extend(list(output['std'].cpu().detach().numpy()))
+            labels.extend(list(output['label'].cpu().detach().numpy()))
+        
+        return {'means': means, 'labels': labels}
+
+def weights_init(m):
+    if isinstance(m, nn.Conv2d):
+        torch.nn.init.xavier_uniform_(m.weight)
+    elif isinstance(m, nn.Linear):
+        torch.nn.init.kaiming_normal_(m.weight)
