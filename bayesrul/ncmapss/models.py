@@ -101,7 +101,7 @@ class NCMAPSSModel(pl.LightningModule):
         self.lr = lr
         self.weight_decay = weight_decay
         self.test_preds = {'preds': [], 'labels': []}
-        weights_init(self)
+        self.apply(weights_init)
 
     def forward(self, x):
         return self.net(x)
@@ -129,17 +129,13 @@ class NCMAPSSModel(pl.LightningModule):
         return {'loss': loss, 'label': batch[1], 'pred': pred} 
 
     def test_epoch_end(self, outputs):
-        preds = []
-        #stds = []
-        labels = []
         for output in outputs:
-            preds.extend(list(output['pred'].flatten().cpu().detach().numpy()))
+            self.test_preds['preds'].extend(list(
+                output['pred'].flatten().cpu().detach().numpy()))
             #stds.extend(list(output['std'].cpu().detach().numpy()))
-            labels.extend(list(output['label'].cpu().detach().numpy()))
+            self.test_preds['labels'].extend(list(
+                output['label'].cpu().detach().numpy()))
         
-        self.test_preds['preds'].extend(preds)
-        self.test_preds['labels'].extend(labels)
-
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
@@ -154,7 +150,7 @@ class NCMAPSSModel(pl.LightningModule):
         return parent_parser
 
 ###############################################################################
-##### BNN 
+##################################### BNN #####################################
 ###############################################################################
 
 class NCMAPSSModelBnn(NCMAPSSModel):
@@ -178,17 +174,19 @@ class NCMAPSSModelBnn(NCMAPSSModel):
         if const_bnn_prior_parameters is not None:
             dnn_to_bnn(self, const_bnn_prior_parameters)
 
+        self.test_preds = {'preds': [], 'labels': [], 'std':[]}
+
 
     def _compute_loss(self, batch, phase):
         (x, y) = batch
         y = y.view(-1, 1)
         y_hat = self.net(x)
         loss = self.criterion(y_hat, y)
+        self.log(f"{self.loss}_loss/{phase}", loss)
         kl = get_kl_loss(self)
-        loss = loss + kl / len(batch)
-        self.log(f"loss/{phase}", loss)
-        self.log(f"loss_mse/{phase}", loss)
-        self.log(f"loss_kl/{phase}", kl / len(batch))
+        loss = loss + kl / y.shape[0]
+        self.log(f"kl_loss/{phase}", kl / y.shape[0])
+        self.log(f"total_loss/{phase}", loss)
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -208,21 +206,19 @@ class NCMAPSSModelBnn(NCMAPSSModel):
         losses = torch.stack(
             [self._compute_loss(batch, "test") for _ in range(self.num_predictions)]
         )
-        self.log(f'loss_std/test', losses.std(dim=0))
-        # TODO STD, CI
         
-        return {'mean': losses.mean(dim=0), 'std': None, 'label': batch[1]} 
+        return {'loss': losses.mean(dim=0), 'std': losses.std(dim=0), 
+                'label': batch[1]} 
 
     def test_epoch_end(self, outputs) -> None:
-        means = []
-        #stds = []
-        labels = []
         for output in outputs:
-            means.extend(list(output['mean'].cpu().detach().numpy()))
-            #stds.extend(list(output['std'].cpu().detach().numpy()))
-            labels.extend(list(output['label'].cpu().detach().numpy()))
+            self.test_preds['preds'].extend(list(
+                output['mean'].cpu().detach().numpy()))
+            self.test_preds['labels'].extend(
+                list(output['label'].cpu().detach().numpy()))
+            self.test_preds['std'].extend(
+                list(output['std'].cpu().detach().numpy()))
         
-        return {'means': means, 'labels': labels}
 
 def weights_init(m):
     if isinstance(m, nn.Conv2d):

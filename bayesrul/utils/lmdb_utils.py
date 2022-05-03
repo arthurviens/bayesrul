@@ -1,3 +1,5 @@
+# Authors   - Xavier Olive, ONERA. https://github.com/xoolive
+#           - Luis Basora, ONERA. https://github.com/lbasora
 import pickle
 from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, TypeVar, Union

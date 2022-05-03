@@ -59,23 +59,26 @@ def complete_training_testing_freq(args):
 
 def complete_training_testing_bayes(args):
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-    dnn = NCMAPSSModelBnn(data.win_length, data.n_features, args.net)
+    dnn = NCMAPSSModelBnn(data.win_length, data.n_features, args.net,
+            const_bnn_prior_parameters=args.const_bnn_prior_parameters)
 
-    checkpoint_dir = Path(f"{args.out_path}/bayesian/{args.model_name}/checkpoints/{args.net}")
+    base_log_dir = f"{args.out_path}/bayesian/{args.model_name}/"
+
+    checkpoint_dir = Path(base_log_dir, f"checkpoints/{args.net}")
     checkpoint_file = get_checkpoint(checkpoint_dir)
 
     logger = TBLogger(
-        f"{args.out_path}/bayesian/{args.model_name}/lightning_logs/{args.net}",
+        base_log_dir + f"lightning_logs/{args.net}",
         default_hp_metric=False,
     )
 
     monitor = f"{dnn.loss}_loss/val"
     checkpoint_callback = ModelCheckpoint(dirpath=checkpoint_dir, monitor=monitor)
-    earlystopping_callback = EarlyStopping(monitor=monitor, patience=15)
+    earlystopping_callback = EarlyStopping(monitor=monitor, patience=100)
 
     trainer = pl.Trainer(
         gpus=[0],
-        max_epochs=1000,
+        max_epochs=10000,
         log_every_n_steps=2,
         logger=logger,
         callbacks=[
@@ -86,9 +89,12 @@ def complete_training_testing_bayes(args):
     trainer.fit(dnn, data, ckpt_path=checkpoint_file)
 
     data = NCMAPSSDataModule(args.data_path, batch_size=1000)
-    dnn = NCMAPSSModel.load_from_checkpoint(get_checkpoint(checkpoint_dir))
+    dnn = NCMAPSSModelBnn.load_from_checkpoint(get_checkpoint(checkpoint_dir))
     trainer = pl.Trainer(gpus=[0], log_every_n_steps=10, logger=logger, 
                         max_epochs=-1) # Silence warning
+
+    predLog = PredLogger(base_log_dir)
+    predLog.save(dnn.test_preds)
 
 
 if __name__ == "__main__":
@@ -122,6 +128,16 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     
+    args.const_bnn_prior_parameters = {
+        "prior_mu": 0.0,
+        "prior_sigma": 1,
+        "posterior_mu_init": 0.0,
+        "posterior_rho_init": -3.0,
+        "type": "Reparameterization",  # Flipout or Reparameterization
+        "moped_enable": False,  # True to initialize mu/sigma from the pretrained dnn weights
+        "moped_delta": 0.5,
+    }
 
-    res = complete_training_testing_freq(args)
-    #complete_training_testing_bayes(args)
+
+    #res = complete_training_testing_freq(args)
+    complete_training_testing_bayes(args)
