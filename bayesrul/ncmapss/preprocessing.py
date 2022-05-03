@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import h5py
 import os
+import re
 
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from ..utils.lmdb_utils import create_lmdb, make_slice
@@ -46,7 +47,7 @@ ncmapss_datanames = {
     'T': ['fan_eff_mod', 'fan_flow_mod', 'LPC_eff_mod', 'LPC_flow_mod',
         'HPC_eff_mod', 'HPC_flow_mod', 'HPT_eff_mod', 'HPT_flow_mod',
         'LPT_eff_mod', 'LPT_flow_mod'],
-    'A': ['Fc'],  # ['unit', 'cycle', 'hs'] removed because not judged relevant
+    'A': [], # ['Fc', 'unit', 'cycle', 'hs'] removed because not judged relevant
     'Y': ['rul']
 }
 
@@ -63,31 +64,55 @@ def generate_parquet(args) -> None:
     -------
     None
     """
-    for filename in args.files:
+
+    for i, filename in enumerate(args.files):
         logging.info("**** %s ****" % filename)
         logging.info("normalization = " + args.normalization)
         logging.info("validation = " + str(args.validation))
 
         filepath = os.path.join(args.out_path, filename)
 
-        print("Extracting dataframes...")
-        df_train, df_val, df_test = extract_validation(
+        print(f"Extracting dataframes of {filename}...")
+        
+        train, val, test = extract_validation(
             filepath=filepath,
             vars=args.subdata,
             validation=args.validation,
         )
+        if i < 1: 
+            df_train, df_val, df_test = train, test, val
+            if len(args.files) > 1:
+                match = re.search(r'DS[0-9]{2}', filename) # Extract DS0?
+                if match:
+                    subset = [match[0]]
+                else:
+                    raise ValueError("Wrong file name {}: doesn't contain DS__"\
+                        .format(filename))
+        else: # If more than one file, concatenate the dataframes
+            df_train = pd.concat([df_train, train])
+            df_test = pd.concat([df_test, test])
+            df_val = pd.concat([df_test, val])
+            
+            match = re.search(r'DS[0-9]{2}', filename)
+            if match:
+                subset.append(match[0])
+            else:
+                raise ValueError("Wrong file name {} : does not contain DS__"\
+                    .format(filename))
 
-        # Normalization
-        scaler = normalize_ncmapss(df_train, arg=args.normalization)
-        _ = normalize_ncmapss(df_val, scaler=scaler)
-        _ = normalize_ncmapss(df_test, scaler=scaler)
+    filename = "_".join(subset) # Create a single parquet name DS0?_DS0?_...
 
-        print("Generating parquet files...")
-        path = Path(args.out_path, "parquet")
-        path.mkdir(exist_ok=True)
-        for df, prefix in zip([df_train, df_val, df_test], ["train", "val", "test"]):
-            if isinstance(df, pd.DataFrame):
-                df.to_parquet(f"{path}/{prefix}_{filename}.parquet")
+    # Normalization
+    scaler = normalize_ncmapss(df_train, arg=args.normalization)
+    _ = normalize_ncmapss(df_val, scaler=scaler)
+    _ = normalize_ncmapss(df_test, scaler=scaler)
+
+    print("Generating parquet files...")
+    path = Path(args.out_path, "parquet")
+    path.mkdir(exist_ok=True)
+    for df, prefix in zip([df_train, df_val, df_test], ["train", "val", "test"]):
+        if isinstance(df, pd.DataFrame):
+            df.to_parquet(f"{path}/{prefix}_{filename}.parquet")
 
 
 

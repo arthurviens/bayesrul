@@ -8,7 +8,7 @@ if __name__ == "__main__":
         test_path = "tests/",
         normalization = "min-max",
         validation = 0.2,
-        files = ["N-CMAPSS_DS02-006"],
+        files = ["N-CMAPSS_DS02-006", "N-CMAPSS_DS03-012"],
         subdata = ['X_s', 'A'],
         win_length=25,  # Window size
         win_step=10,    # Window step
@@ -18,4 +18,6 @@ if __name__ == "__main__":
 
     generate_parquet(args)
     generate_lmdb(args)
-    generate_unittest_subsample(args) # To create unit test parquets
+    
+    #args.files = ["N-CMAPSS_DS02-006"]
+    #generate_unittest_subsample(args) # To create unit test parquets

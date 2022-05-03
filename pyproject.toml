@@ -17,6 +17,7 @@ bayesian-torch = "^0.2.1"
 fastparquet = "^0.8.1"
 ipykernel = "^6.13.0"
 h5py = "^3.6.0"
+matplotlib = "^3.5.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
