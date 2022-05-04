@@ -596,6 +596,21 @@ signals = ["blinker (>=1.4.0)"]
 signedtoken = ["cryptography (>=3.0.0)", "pyjwt (>=2.0.0,<3)"]
 
 [[package]]
+name = "opt-einsum"
+version = "3.3.0"
+description = "Optimizing numpys einsum function"
+category = "main"
+optional = false
+python-versions = ">=3.5"
+
+[package.dependencies]
+numpy = ">=1.7"
+
+[package.extras]
+docs = ["sphinx (==1.2.3)", "sphinxcontrib-napoleon", "sphinx-rtd-theme", "numpydoc"]
+tests = ["pytest", "pytest-cov", "pytest-pep8"]
+
+[[package]]
 name = "packaging"
 version = "21.3"
 description = "Core utilities for Python packages"
@@ -791,6 +806,41 @@ python-versions = ">=3.6.8"
 
 [package.extras]
 diagrams = ["railroad-diagrams", "jinja2"]
+
+[[package]]
+name = "pyro-api"
+version = "0.1.2"
+description = "Generic API for dispatch to Pyro backends."
+category = "main"
+optional = false
+python-versions = "*"
+
+[package.extras]
+dev = ["sphinx (>=2.0)", "sphinx-rtd-theme", "ipython"]
+test = ["flake8", "pytest (>=5.0)"]
+
+[[package]]
+name = "pyro-ppl"
+version = "1.8.1"
+description = "A Python library for probabilistic modeling and inference"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[package.dependencies]
+numpy = ">=1.7"
+opt-einsum = ">=2.3.2"
+pyro-api = ">=0.1.1"
+torch = ">=1.11.0"
+tqdm = ">=4.36"
+
+[package.extras]
+dev = ["jupyter (>=1.0.0)", "graphviz (>=0.8)", "matplotlib (>=1.3)", "torchvision (>=0.12.0)", "visdom (>=0.1.4)", "pandas", "pillow (==8.2.0)", "scikit-learn", "seaborn", "wget", "lap", "black (>=21.4b0)", "flake8", "isort (>=5.0)", "mypy (>=0.812)", "nbformat", "nbsphinx (>=0.3.2)", "nbstripout", "nbval", "ninja", "pypandoc", "pytest (>=5.0)", "pytest-xdist", "scipy (>=1.1)", "sphinx", "sphinx-rtd-theme", "yapf"]
+extras = ["jupyter (>=1.0.0)", "graphviz (>=0.8)", "matplotlib (>=1.3)", "torchvision (>=0.12.0)", "visdom (>=0.1.4)", "pandas", "pillow (==8.2.0)", "scikit-learn", "seaborn", "wget", "lap"]
+funsor = ["funsor[torch] (==0.4.3)"]
+horovod = ["horovod[pytorch] (>=0.19)"]
+profile = ["prettytable", "pytest-benchmark", "snakeviz"]
+test = ["jupyter (>=1.0.0)", "graphviz (>=0.8)", "matplotlib (>=1.3)", "torchvision (>=0.12.0)", "visdom (>=0.1.4)", "pandas", "pillow (==8.2.0)", "scikit-learn", "seaborn", "wget", "lap", "black (>=21.4b0)", "flake8", "nbval", "pytest (>=5.0)", "pytest-cov", "scipy (>=1.1)"]
 
 [[package]]
 name = "pytest"
@@ -1215,7 +1265,7 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytest-
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "8ae8afb6f5ab818cac72a7311486a1c4c8a924d8b76038281bc9be9de2f83de0"
+content-hash = "2f42046d80828e95a944b6bd34aa32578763659c20c78dfb8cc61dde4c42574a"
 
 [metadata.files]
 absl-py = [
@@ -1927,6 +1977,10 @@ oauthlib = [
     {file = "oauthlib-3.2.0-py3-none-any.whl", hash = "sha256:6db33440354787f9b7f3a6dbd4febf5d0f93758354060e802f6c06cb493022fe"},
     {file = "oauthlib-3.2.0.tar.gz", hash = "sha256:23a8208d75b902797ea29fd31fa80a15ed9dc2c6c16fe73f5d346f83f6fa27a2"},
 ]
+opt-einsum = [
+    {file = "opt_einsum-3.3.0-py3-none-any.whl", hash = "sha256:2455e59e3947d3c275477df7f5205b30635e266fe6dc300e3d9f9646bfcea147"},
+    {file = "opt_einsum-3.3.0.tar.gz", hash = "sha256:59f6475f77bbc37dcf7cd748519c0ec60722e91e63ca114e68821c0c54a46549"},
+]
 packaging = [
     {file = "packaging-21.3-py3-none-any.whl", hash = "sha256:ef103e05f519cdc783ae24ea4e2e0f508a9c99b2d4969652eed6a2e1ea5bd522"},
     {file = "packaging-21.3.tar.gz", hash = "sha256:dd47c42927d89ab911e606518907cc2d3a1f38bbd026385970643f9c5b8ecfeb"},
@@ -2131,6 +2185,14 @@ pygments = [
 pyparsing = [
     {file = "pyparsing-3.0.8-py3-none-any.whl", hash = "sha256:ef7b523f6356f763771559412c0d7134753f037822dad1b16945b7b846f7ad06"},
     {file = "pyparsing-3.0.8.tar.gz", hash = "sha256:7bf433498c016c4314268d95df76c81b842a4cb2b276fa3312cfb1e1d85f6954"},
+]
+pyro-api = [
+    {file = "pyro-api-0.1.2.tar.gz", hash = "sha256:a1b900d9580aa1c2fab3b123ab7ff33413744da7c5f440bd4aadc4d40d14d920"},
+    {file = "pyro_api-0.1.2-py3-none-any.whl", hash = "sha256:10e0e42e9e4401ce464dab79c870e50dfb4f413d326fa777f3582928ef9caf8f"},
+]
+pyro-ppl = [
+    {file = "pyro-ppl-1.8.1.tar.gz", hash = "sha256:d7c049eb2e7485a612b4dd99c24c309cc860c7cbc6b1973387034f5436d1c8d6"},
+    {file = "pyro_ppl-1.8.1-py3-none-any.whl", hash = "sha256:ca01ab4565eb9a1af4a60dbc481da5cb6f5fe5a72efa19e83638e03683efbca6"},
 ]
 pytest = [
     {file = "pytest-5.4.3-py3-none-any.whl", hash = "sha256:5c0db86b698e8f170ba4582a492248919255fcd4c79b1ee64ace34301fb589a1"},

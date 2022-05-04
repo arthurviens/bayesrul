@@ -139,5 +139,5 @@ if __name__ == "__main__":
     }
 
 
-    #res = complete_training_testing_freq(args)
-    complete_training_testing_bayes(args)
+    complete_training_testing_freq(args)
+    #complete_training_testing_bayes(args)
