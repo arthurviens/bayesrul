@@ -1,6 +1,7 @@
 import os
 import contextlib
 from types import SimpleNamespace
+from functools import partial
 from pathlib import Path
 from debugpy import configure
 import pytorch_lightning as pl
@@ -30,78 +31,13 @@ args = SimpleNamespace(
     lr=1e-4
 )
 
-"""
-class Lite(LightningLite):
-    def run(self, args, data, logger=None):
-        optimizer = self.configure_optimizers()
-        self.model = BNNWrapper(data.win_length, data.n_features, args.net)
-        self.data = data
-        self.logger = logger
-        
-        self.fit()
-
-    def fit(self):
-        dataloader = self.setup_dataloaders(self.data.train_dataloader())
-        self.model.bnn.train(True)
-
-        for epoch in tqdm(range(5)):
-            for i, batch in enumerate(tqdm(dataloader, leave=False)):
-                self.training_step(batch, i)
-"""
-
-class TyxeMainLoop(Loop):
-    def __init__(self, model, dataloader, epochs):
-        self.model = model 
-        self.dataloader = dataloader 
-        self.epochs = epochs
-        self.epoch = 0
-        self.fit_loop = TyxeFitLoop(self.model, self.dataloader)
-
-    @property
-    def done(self) -> bool:
-        return self.epoch >= self.epochs
-
-    def connect(self, fit_loop: FitLoop) -> None:
-        self.fit_loop = fit_loop
-
-    def reset(self):
-        pass
-
-    def run(self):
-        while not self.done:
-            self.advance()
-    
-    def advance(self, *args, **kwargs) -> None:
-        self.fit_loop.run(self.epoch)
-        self.epoch += 1
-
-
-class TyxeFitLoop(Loop):
-    def __init__(self, model, dataloader):
-        super().__init__()
-        self.model = model
-        self.dataloader = dataloader.train_dataloader()
-        self.dataloader_iter = enumerate(self.dataloader)
-        self.trainloader_size = len(self.dataloader)
-
-    @property
-    def done(self) -> bool:
-        return False
-    
-    def reset(self) -> None:
-        self.dataloader_iter = enumerate(self.dataloader)
-
-    def advance(self, epoch) -> None:
-        batch_idx, batch = next(self.dataloader_iter)
-        self.model.training_step(batch, batch_idx)
-
-
 
 class NCMAPSSModelBnn(pl.LightningModule):
     def __init__(
         self,
         win_length,
         n_features,
+        dataset_size,
         net="linear",
         mode="vi",
         fit_context="lrt",
@@ -125,51 +61,71 @@ class NCMAPSSModelBnn(pl.LightningModule):
             self.fit_ctxt = contextlib.nullcontext
 
 
+        self.automatic_optimization = False
         self.configure_optimizers()
-        closed_form_kl = True
+        closed_form_kl = False
         self.lr = lr
         self.mode = mode 
         self.num_particles = num_particles
         self.test_preds = {'preds': [], 'labels': [], 'stds': []}
         self.net.apply(weights_init)
-        self.prior = tyxe.priors.IIDPrior(dist.Normal(0, 1))
-        self.likelihood = tyxe.likelihoods.HomoskedasticGaussian(87251, scale=0.1) # 87251
-        self.inference = tyxe.guides.AutoNormal # ag.AutoMultivariateNormal 
-        self.bnn = tyxe.VariationalBNN(self.net, self.prior, self.likelihood, self.inference)
-        
+        self.prior = tyxe.priors.IIDPrior(dist.Normal(
+            torch.tensor(0.).to(self.device), 
+            torch.tensor(1.).to(self.device)))
+        self.obs_model = tyxe.likelihoods.HomoskedasticGaussian(dataset_size, scale=0.1)
+        self.guide_builder = partial(tyxe.guides.AutoNormal, init_scale=0.01)
+        self.bnn = tyxe.VariationalBNN(self.net.to(self.device), self.prior, self.obs_model, self.guide_builder)
+
         if closed_form_kl: self.loss = TraceMeanField_ELBO(num_particles)  
         else: self.loss = Trace_ELBO(num_particles)
         self.svi = SVI(self.bnn.model, self.bnn.guide, 
-            self.optimizer, loss=self.loss)
-        self.automatic_optimization = False
+                        self.optimizer, loss=self.loss)
+
+
+    def predict(self, data, num_pred):
+        m, sd = self.bnn.predict(data, # GPU problem here 
+            num_predictions=num_pred)
+        return m, sd
+
+
+    def test_step(self, batch, batch_idx):
+        (x, y) = batch
+        with self.fit_ctxt():
+            m, sd = self.bnn.predict(x)
+        mse = F.mse_loss(y, m.squeeze())
+        self.log("mse_loss/test", mse)
+
+
+    def validation_step(self, batch, batch_idx):
+        (x, y) = batch
+        with self.fit_ctxt():
+            m, sd = self.predict(x, 1)
+        mse = F.mse_loss(y, m.squeeze())
+        self.log("mse_loss/val", mse)
 
 
     def training_step(self, batch, batch_idx):
         (x, y) = batch
         with self.fit_ctxt():
             elbo = self.svi.step(x, y)
-            print(elbo)
+            m, sd = self.bnn.predict(x)
+        mse = F.mse_loss(y, m.squeeze()).item()
+        
+        self.log("mse_loss/train", mse)
+        self.log("elbo/train", elbo)
 
-
-        exit(-1)
-        self.log("loss/train", elbo)
-        #return elbo
-
-    def validation_step(self, batch, batch_idx):
-        return 1
 
     def configure_optimizers(self):
         self.optimizer = pyro.optim.Adam({"lr": 1e-3})
 
 
 
-
+import matplotlib.pyplot as plt
 if __name__ == "__main__":
-    print("Hello, world!")
     data = NCMAPSSDataModule(args.data_path, batch_size=1000)
-    #print(len(data.train_dataloader()))
 
-    dnn = NCMAPSSModelBnn(data.win_length, data.n_features, args.net)
+    dnn = NCMAPSSModelBnn(data.win_length, data.n_features, data.train_size,
+        net = args.net)
 
     base_log_dir = f"{args.out_path}/test/{args.model_name}/"
 
@@ -182,21 +138,13 @@ if __name__ == "__main__":
     )
 
     trainer = pl.Trainer(
-        #gpus=[0],
+        #gpus=[0], # Does not work yet with TyXE
         max_epochs=100,
         log_every_n_steps=2,
         logger=logger,
     )
 
-    #internal_fit_loop = trainer.fit_loop
-    #outerloop = TyxeMainLoop(dnn, data, 5)
-    #innerloop = TyxeFitLoop(dnn, data)
-    #trainer.fit_loop = outerloop
-    #trainer.fit_loop.connect(internal_fit_loop)
     trainer.fit(dnn, data)
-    
-    #Lite().run(args, data, logger=logger)
-
 
 
 

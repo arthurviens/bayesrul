@@ -40,6 +40,10 @@ class NCMAPSSDataModule(pl.LightningDataModule):
             self.datasets["train"].n_features,
         )
 
+    @property
+    def train_size(self):
+        return len(self.datasets['train'])
+
     def train_dataloader(self):
         return DataLoader(
             self.datasets["train"],
