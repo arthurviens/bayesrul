@@ -5,7 +5,8 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
-from bayesrul.ncmapss.models import NCMAPSSModel, NCMAPSSModelBnn, get_checkpoint, TBLogger
+from bayesrul.ncmapss.freq_models import NCMAPSSModel, get_checkpoint, TBLogger
+from bayesrul.ncmapss.bayesiantorch_models import NCMAPSSModelBnn
 from bayesrul.utils.plotting import PredLogger
 
 import numpy as np

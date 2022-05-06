@@ -25,6 +25,11 @@ Use poetry to install dependencies
 poetry install
 ```
 
+TyXe has to be installed by hand, as it is not on PyPI
+```
+pip install git+https://github.com/TyXe-BDL/TyXe.git
+```
+
 ## Generate dataset lmdb files for CMAPSS
 Make sure to have the CMAPSS dataset at `data/CMAPSSData.zip`
 Launch the script

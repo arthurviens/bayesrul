@@ -107,7 +107,7 @@ class NCMAPSSModel(pl.LightningModule):
         self.lr = lr
         self.weight_decay = weight_decay
         self.test_preds = {'preds': [], 'labels': []}
-        self.apply(weights_init)
+        self.net.apply(weights_init)
 
     def forward(self, x):
         return self.net(x)
@@ -156,4 +156,3 @@ class NCMAPSSModel(pl.LightningModule):
         return parent_parser
 
         
-

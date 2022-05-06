@@ -18,7 +18,7 @@ fastparquet = "^0.8.1"
 ipykernel = "^6.13.0"
 h5py = "^3.6.0"
 matplotlib = "^3.5.1"
-pyro-ppl = "^1.8.1"
+pyro-ppl = "~1.4"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
