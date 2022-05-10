@@ -1,6 +1,4 @@
-from cgi import test
 from pathlib import Path
-from types import SimpleNamespace
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 
@@ -9,8 +7,7 @@ from bayesrul.ncmapss.freq_models import NCMAPSSModel, get_checkpoint, TBLogger
 from bayesrul.ncmapss.bayesiantorch_models import NCMAPSSModelBnn
 from bayesrul.utils.plotting import PredLogger
 
-import numpy as np
-import pandas as pd
+import torch
 
 import argparse
 
@@ -58,7 +55,7 @@ def complete_training_testing_freq(args):
 
 
 
-def complete_training_testing_bayes(args):
+def complete_training_testing_bayesiantorch(args):
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
     dnn = NCMAPSSModelBnn(data.win_length, data.n_features, args.net,
             const_bnn_prior_parameters=args.const_bnn_prior_parameters)
@@ -96,6 +93,42 @@ def complete_training_testing_bayes(args):
 
     predLog = PredLogger(base_log_dir)
     predLog.save(dnn.test_preds)
+
+
+
+def complete_training_testing_tyxe(args):
+    data = NCMAPSSDataModule(args.data_path, batch_size=1000)
+
+    dnn = NCMAPSSModelBnn(data.win_length, data.n_features, data.train_size,
+        net = args.net, device=torch.device("cuda:0"))
+
+    base_log_dir = Path(args.out_path, "test", args.model_name)
+
+    checkpoint_file = get_checkpoint(base_log_dir, version=None)
+
+    logger = TBLogger(
+        Path(base_log_dir),# ,f"lightning_logs/{args.net}"),
+        default_hp_metric=False,
+    )
+
+    monitor = f"{dnn.loss_name}/val"
+    #checkpoint_callback = ModelCheckpoint(checkpoint_dir)
+    earlystopping_callback = EarlyStopping(monitor=monitor, patience=5)
+
+    trainer = pl.Trainer(
+        #default_root_dir=checkpoint_dir,
+        gpus=[0], # For now, only on one GPU possible, because Pyro prior's device determines where the code is executed
+        max_epochs=14,
+        log_every_n_steps=2,
+        logger=logger,
+        callbacks=[
+            earlystopping_callback,
+        ],
+    )
+
+    trainer.fit(dnn, data, ckpt_path=checkpoint_file)
+    trainer.predict(dnn, data)
+
 
 
 if __name__ == "__main__":
@@ -140,5 +173,5 @@ if __name__ == "__main__":
     }
 
 
-    complete_training_testing_freq(args)
-    #complete_training_testing_bayes(args)
+    #complete_training_testing_freq(args)
+    complete_training_testing_tyxe(args)

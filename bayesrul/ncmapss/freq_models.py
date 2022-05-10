@@ -1,4 +1,4 @@
-import os
+import os, glob
 
 import pytorch_lightning as pl
 import torch
@@ -7,13 +7,19 @@ from pytorch_lightning.utilities import rank_zero_only
 from torch.functional import F
 
 
-def get_checkpoint(checkpoint_dir) -> None:
-    if checkpoint_dir.is_dir():
-        checkpoint_file = sorted(
-            checkpoint_dir.glob("*.ckpt"), key=os.path.getmtime, reverse=True
-        )
-        return str(checkpoint_file[0]) if checkpoint_file else None
-    return None
+def get_checkpoint(path, version=None) -> None:
+    try:
+        path = os.path.join(os.getcwd(), path, 'lightning_logs')
+        ls = sorted(os.listdir(path))
+        d = os.path.join(path, ls[-1], "checkpoints")
+        if os.path.isdir(d):
+            checkpoint_file = sorted(
+                glob.glob(os.path.join(d, "*.ckpt")), key=os.path.getmtime, reverse=True
+            )
+            return str(checkpoint_file[0]) if checkpoint_file else None
+        return None
+    except FileNotFoundError:
+        return None
 
 
 # To get rid of the tensorboard epoch plot
