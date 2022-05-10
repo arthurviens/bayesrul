@@ -1,10 +1,11 @@
+from email.mime import base
 from pathlib import Path
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
-from bayesrul.ncmapss.freq_models import NCMAPSSModel, get_checkpoint, TBLogger
-from bayesrul.ncmapss.bayesiantorch_models import NCMAPSSModelBnn
+from bayesrul.ncmapss.frequentist_models import NCMAPSSModel, get_checkpoint, TBLogger
+from bayesrul.ncmapss.bayesian_models import NCMAPSSModelBnn
 from bayesrul.utils.plotting import PredLogger
 
 import torch
@@ -16,34 +17,35 @@ def complete_training_testing_freq(args):
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
     dnn = NCMAPSSModel(data.win_length, data.n_features, args.net)
 
-    base_log_dir = f"{args.out_path}/frequentist/{args.model_name}/"
+    base_log_dir = Path(args.out_path, "frequentist", args.model_name)
 
-    checkpoint_dir = Path(base_log_dir, f"checkpoints/{args.net}")
-    checkpoint_file = get_checkpoint(checkpoint_dir)
+    checkpoint_file = get_checkpoint(base_log_dir, version=None)
 
     logger = TBLogger(
-        base_log_dir + f"lightning_logs/{args.net}",
+        Path(base_log_dir),# ,f"lightning_logs/{args.net}"),
         default_hp_metric=False,
     )
 
+
     monitor = f"{dnn.loss}_loss/val"
-    checkpoint_callback = ModelCheckpoint(dirpath=checkpoint_dir, monitor=monitor)
     earlystopping_callback = EarlyStopping(monitor=monitor, patience=50)
 
     trainer = pl.Trainer(
+        default_root_dir=base_log_dir,
         gpus=[0],
-        max_epochs=1000,
+        max_epochs=1,
         log_every_n_steps=2,
         logger=logger,
         callbacks=[
-            checkpoint_callback,
             earlystopping_callback,
         ],
     )
+    
     trainer.fit(dnn, data, ckpt_path=checkpoint_file)
 
+
     data = NCMAPSSDataModule(args.data_path, batch_size=1000)
-    dnn = NCMAPSSModel.load_from_checkpoint(get_checkpoint(checkpoint_dir))
+    dnn = NCMAPSSModel.load_from_checkpoint(checkpoint_file)
     trainer = pl.Trainer(gpus=[0], log_every_n_steps=10, logger=logger, 
                         max_epochs=-1) # Silence warning
     
@@ -53,56 +55,13 @@ def complete_training_testing_freq(args):
 
 
 
-
-
-def complete_training_testing_bayesiantorch(args):
-    data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-    dnn = NCMAPSSModelBnn(data.win_length, data.n_features, args.net,
-            const_bnn_prior_parameters=args.const_bnn_prior_parameters)
-
-    base_log_dir = f"{args.out_path}/bayesian/{args.model_name}/"
-
-    checkpoint_dir = Path(base_log_dir, f"checkpoints/{args.net}")
-    checkpoint_file = get_checkpoint(checkpoint_dir)
-
-    logger = TBLogger(
-        base_log_dir + f"lightning_logs/{args.net}",
-        default_hp_metric=False,
-    )
-
-    monitor = f"{dnn.loss}_loss/val"
-    checkpoint_callback = ModelCheckpoint(dirpath=checkpoint_dir, monitor=monitor)
-    earlystopping_callback = EarlyStopping(monitor=monitor, patience=100)
-
-    trainer = pl.Trainer(
-        gpus=[0],
-        max_epochs=10000,
-        log_every_n_steps=2,
-        logger=logger,
-        callbacks=[
-            checkpoint_callback,
-            earlystopping_callback,
-        ],
-    )
-    trainer.fit(dnn, data, ckpt_path=checkpoint_file)
-
-    data = NCMAPSSDataModule(args.data_path, batch_size=1000)
-    dnn = NCMAPSSModelBnn.load_from_checkpoint(get_checkpoint(checkpoint_dir))
-    trainer = pl.Trainer(gpus=[0], log_every_n_steps=10, logger=logger, 
-                        max_epochs=-1) # Silence warning
-
-    predLog = PredLogger(base_log_dir)
-    predLog.save(dnn.test_preds)
-
-
-
 def complete_training_testing_tyxe(args):
-    data = NCMAPSSDataModule(args.data_path, batch_size=1000)
+    data = NCMAPSSDataModule(args.data_path, batch_size=10000)
 
     dnn = NCMAPSSModelBnn(data.win_length, data.n_features, data.train_size,
         net = args.net, device=torch.device("cuda:0"))
 
-    base_log_dir = Path(args.out_path, "test", args.model_name)
+    base_log_dir = Path(args.out_path, "bayesian", args.model_name)
 
     checkpoint_file = get_checkpoint(base_log_dir, version=None)
 
@@ -118,7 +77,7 @@ def complete_training_testing_tyxe(args):
     trainer = pl.Trainer(
         #default_root_dir=checkpoint_dir,
         gpus=[0], # For now, only on one GPU possible, because Pyro prior's device determines where the code is executed
-        max_epochs=14,
+        max_epochs=1000,
         log_every_n_steps=2,
         logger=logger,
         callbacks=[
@@ -126,8 +85,11 @@ def complete_training_testing_tyxe(args):
         ],
     )
 
-    trainer.fit(dnn, data, ckpt_path=checkpoint_file)
-    trainer.predict(dnn, data)
+    trainer.fit(dnn, data)
+    trainer.test(dnn, data, verbose=False)
+
+    predLog = PredLogger(base_log_dir)
+    predLog.save(dnn.test_preds)
 
 
 

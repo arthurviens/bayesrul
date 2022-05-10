@@ -9,7 +9,7 @@ from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loops import Loop, FitLoop
 import torch
 import torch.nn as nn
-from bayesrul.ncmapss.freq_models import get_checkpoint, TBLogger, Linear, Conv, weights_init
+from bayesrul.ncmapss.frequentist_models import get_checkpoint, TBLogger, Linear, Conv, weights_init
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
 from torch.functional import F
 
@@ -107,16 +107,28 @@ class NCMAPSSModelBnn(pl.LightningModule):
             ),
         )
 
-        self.test_preds = {'preds': [], 'labels': []}
+        self.test_preds = {'labels': [], 'preds': [], 'stds': []}
 
 
     def test_step(self, batch, batch_idx):
         (x, y) = batch
         with self.fit_ctxt():
-            m, sd = self.bnn.predict(x)
-            
+            m, sd = self.bnn.predict(x, num_predictions=100)
+        
         mse = F.mse_loss(y, m.squeeze())
         self.log("mse_loss/test", mse)
+
+        return {"loss": mse, "label": batch[1], "pred": m.squeeze(), "std": sd}
+
+
+    def test_epoch_end(self, outputs):
+        for output in outputs:
+            self.test_preds['preds'].extend(list(
+                output['pred'].flatten().cpu().detach().numpy()))
+            self.test_preds['labels'].extend(list(
+                output['label'].cpu().detach().numpy()))
+            self.test_preds['stds'].extend(list(
+                output['std'].flatten().cpu().detach().numpy()))
 
 
     def validation_step(self, batch, batch_idx):
@@ -155,54 +167,5 @@ class NCMAPSSModelBnn(pl.LightningModule):
         checkpoint['state_dict'] = remove_dict_entry_startswith(checkpoint['state_dict'], 'bnn')
 
 
-"""
-
-class CustomCheckpointIO(CheckpointIO):
-    def save_checkpoint(self, checkpoint, path, storage_options=None):
-        checkpoint["param_store"] = pyro.get_param_store().get_state()
-
-    def load_checkpoint(self, checkpoint, path, storage_options=None):
-        pyro.get_param_store().set_state(checkpoint["param_store"])
-
-    def remove_checkpoint(self, path):
-        ...
-"""
-
-
-
-import matplotlib.pyplot as plt
-if __name__ == "__main__":
-    data = NCMAPSSDataModule(args.data_path, batch_size=1000)
-
-    dnn = NCMAPSSModelBnn(data.win_length, data.n_features, data.train_size,
-        net = args.net, device=torch.device("cuda:0"))
-
-    base_log_dir = Path(args.out_path, "test", args.model_name)
-
-    checkpoint_file = get_checkpoint(base_log_dir, version=None)
-
-    logger = TBLogger(
-        Path(base_log_dir),# ,f"lightning_logs/{args.net}"),
-        default_hp_metric=False,
-    )
-
-    monitor = f"{dnn.loss_name}/val"
-    #checkpoint_callback = ModelCheckpoint(checkpoint_dir)
-    earlystopping_callback = EarlyStopping(monitor=monitor, patience=5)
-
-    trainer = pl.Trainer(
-        #default_root_dir=checkpoint_dir,
-        gpus=[0], # For now, only on one GPU possible, because Pyro prior's device determines where the code is executed
-        max_epochs=14,
-        log_every_n_steps=2,
-        logger=logger,
-        callbacks=[
-            earlystopping_callback,
-        ],
-    )
-
-    trainer.fit(dnn, data, ckpt_path=checkpoint_file)
-    trainer.predict(dnn, data)
-    #trainer.save_checkpoint(os.path.join(checkpoint_dir, "epoch5.ckpt"))
 
 

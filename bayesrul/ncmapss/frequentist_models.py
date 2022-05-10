@@ -18,7 +18,9 @@ def get_checkpoint(path, version=None) -> None:
             )
             return str(checkpoint_file[0]) if checkpoint_file else None
         return None
-    except FileNotFoundError:
+    except Exception as e:
+        if e == FileNotFoundError:
+            print("Could not find any checkpoint in {}".format(d))
         return None
 
 
