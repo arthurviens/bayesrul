@@ -17,9 +17,9 @@ class PredLogger:
         self.file_path = Path(self.path, 'preds.npy')
 
     def save(self, test_preds):
-        if hasattr(test_preds, 'std'): 
+        if 'stds' in test_preds.keys():
             to_save = np.array([test_preds['preds'], 
-                test_preds['labels'], test_preds['std']])
+                test_preds['labels'], test_preds['stds']])
         else:
             to_save = np.array([test_preds['preds'], test_preds['labels']])
         
@@ -29,7 +29,7 @@ class PredLogger:
         outputs = np.load(self.file_path)
         if outputs.shape[0] == 3:
             return {'preds': outputs[0, :], 'labels': outputs[1, :],
-                    'std': outputs[2, :]}
+                    'stds': outputs[2, :]}
         else:
             return {'preds': outputs[0, :], 'labels': outputs[1, :]}
 
@@ -38,7 +38,7 @@ def plot_rul_pred(out, std=False):
     preds = out['preds']
     labels = out['labels']
     if std:
-        stds = out['std']
+        stds = out['stds']
 
     n = len(preds)
     assert n == len(labels), "Inconsistent sizes predictions {}, labels {}"\
