@@ -10,11 +10,13 @@ from torch.functional import F
 def get_checkpoint(path, version=None) -> None:
     try:
         path = os.path.join(os.getcwd(), path, 'lightning_logs')
-        ls = sorted(os.listdir(path))
+        ls = sorted(os.listdir(path), reverse = True)
         d = os.path.join(path, ls[-1], "checkpoints")
         if os.path.isdir(d):
             checkpoint_file = sorted(
-                glob.glob(os.path.join(d, "*.ckpt")), key=os.path.getmtime, reverse=True
+                glob.glob(os.path.join(d, "*.ckpt")), 
+                key=os.path.getmtime, 
+                reverse=True
             )
             return str(checkpoint_file[0]) if checkpoint_file else None
         return None
@@ -89,19 +91,19 @@ class NCMAPSSModel(pl.LightningModule):
         self,
         win_length,
         n_features,
-        net="linear",
+        archi="linear",
         lr=1e-3,
         weight_decay=1e-3,
         loss='mse'
     ):
         super().__init__()
         self.save_hyperparameters()
-        if net == "linear":
+        if archi == "linear":
             self.net = Linear(win_length, n_features)
-        elif net == "conv":
+        elif archi == "conv":
             self.net = Conv(win_length, n_features)
         else:
-            raise ValueError(f"Model architecture {net} not implemented")
+            raise ValueError(f"Model architecture {archi} not implemented")
 
         if (loss == 'mse') or (loss == 'MSE'):
             self.criterion = F.mse_loss
@@ -166,3 +168,68 @@ class NCMAPSSModel(pl.LightningModule):
         return parent_parser
 
         
+class NCMAPSSPretrain(pl.LightningModule):
+    def __init__(
+        self,
+        win_length,
+        n_features,
+        archi="linear",
+        lr=1e-3,
+        weight_decay=1e-3,
+        loss='mse'
+    ):
+        super().__init__()
+        self.save_hyperparameters()
+        if archi == "linear":
+            self.net = Linear(win_length, n_features)
+        elif archi == "conv":
+            self.net = Conv(win_length, n_features)
+        else:
+            raise ValueError(f"Model architecture {archi} not implemented")
+
+        if (loss == 'mse') or (loss == 'MSE'):
+            self.criterion = F.mse_loss
+            self.loss = 'mse'
+        elif (loss == 'l1') or (loss == 'L1'):
+            self.criterion = F.l1_loss
+            self.loss = 'l1'
+        else:
+            raise ValueError(f"Loss {loss} not supported. Choose from"
+                " ['mse', 'l1']")
+                
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self.net.apply(weights_init)
+
+    def forward(self, x):
+        return self.net(x)
+
+    def _compute_loss(self, batch, phase, return_pred=False): 
+        (x, y) = batch
+        y = y.view(-1, 1)
+        y_hat = self.net(x)
+        loss = self.criterion(y_hat, y)
+        if return_pred:
+            return loss, y_hat
+        else:
+            return loss
+
+    def training_step(self, batch, batch_idx):
+        return self._compute_loss(batch, "train")
+
+    def validation_step(self, batch, batch_idx):
+        return self._compute_loss(batch, "val")
+
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(
+            self.parameters(), lr=self.lr, weight_decay=self.weight_decay
+        )
+        return optimizer
+
+    @staticmethod
+    def add_model_specific_args(parent_parser):
+        """To initialize from checkpoint, without giving init args """
+        parser = parent_parser.add_argument_group("NCMAPSSPretrain")
+        parser.add_argument("--net", type=str, default="linear")
+        return parent_parser
