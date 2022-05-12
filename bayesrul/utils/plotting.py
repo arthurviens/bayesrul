@@ -11,10 +11,13 @@ class PredLogger:
     Class to save and load labels and predictions on test set 
         Also saves and loads stdev for bayesian models
     """
-    def __init__(self, path):
+    def __init__(self, path, filename=None):
         self.path = Path(path, 'predictions')
         self.path.mkdir(exist_ok=True)
-        self.file_path = Path(self.path, 'preds.npy')
+        if filename is None:
+            filename = 'preds.npy'
+            
+        self.file_path = Path(self.path, filename)
 
     def save(self, test_preds):
         if 'stds' in test_preds.keys():

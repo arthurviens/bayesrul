@@ -165,8 +165,11 @@ def test_process_files():
             np.linalg.norm(line.data), line.rul]], 
             columns=['ds', 'unit', 'win', 'norm', 'rul'])
         results = pd.concat([results, s], axis=0, ignore_index=True)
+    results.sort_values(['ds', 'unit', 'win'], inplace=True)
+    results.reset_index(drop=True, inplace=True)
+
 
     assert np.linalg.norm(results.loc[0].values
-        - np.array([2, 11.0, 0, 85.13037257472445, 37.0])) <= 1e-7
+        - np.array([2, 2.0, 0, 67.347903, 53.0])) <= 1e-7
     assert np.linalg.norm(results.loc[results.shape[0] - 1].values
         - np.array([2, 20.0, 6, 297.4568, 0])) <= 1e-7

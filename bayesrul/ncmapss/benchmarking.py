@@ -1,10 +1,11 @@
 from email.mime import base
 from pathlib import Path
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.callbacks import EarlyStopping
 
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
-from bayesrul.ncmapss.frequentist_models import NCMAPSSModel, get_checkpoint, TBLogger
+from bayesrul.ncmapss.frequentist_models import NCMAPSSModel, NCMAPSSPretrain
+from bayesrul.ncmapss.frequentist_models import get_checkpoint, TBLogger
 from bayesrul.ncmapss.bayesian_models import NCMAPSSModelBnn
 from bayesrul.utils.plotting import PredLogger
 
@@ -22,7 +23,7 @@ def complete_training_testing_freq(args):
     checkpoint_file = get_checkpoint(base_log_dir, version=None)
 
     logger = TBLogger(
-        Path(base_log_dir),# ,f"lightning_logs/{args.net}"),
+        Path(base_log_dir),
         default_hp_metric=False,
     )
 
@@ -55,15 +56,37 @@ def complete_training_testing_freq(args):
 
 
 
-def complete_training_testing_tyxe(args):
+def complete_training_testing_tyxe(args, hyperparams=None):
+    if hyperparams is None:
+        hyperparams = {
+            'prior_loc' : 0.,
+            'prior_scale' : 1.,
+            'likelihood_scale' : 0.5,
+            'vardist_scale' : 0.50001,
+            'mode' : 'vi',
+            'fit_context' : 'lrt',
+            'lr' : 1e-3,
+            'pretrain_file' : None,
+        }
+
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-
-    dnn = NCMAPSSModelBnn(data.win_length, data.n_features, data.train_size,
-        net = args.net, device=torch.device("cuda:0"))
-
     base_log_dir = Path(args.out_path, "bayesian", args.model_name)
+    print(f"Archi : {args.archi}")
+    if args.pretrain > 0:
+        hyperparams['pretrain_file'] = Path(base_log_dir, 
+            'pretrained_{}.pt'.format(args.pretrain)).as_posix()
+        pre_net = NCMAPSSPretrain(data.win_length, data.n_features,
+            archi = args.archi)
+        trainer = pl.Trainer(gpus=[0], max_epochs=args.pretrain, logger=False,
+            checkpoint_callback=False)
+        trainer.fit(pre_net, data)
+        base_log_dir.mkdir(exist_ok=True)
+        torch.save(pre_net.net.state_dict(), hyperparams['pretrain_file'])
+        
+    dnn = NCMAPSSModelBnn(data.win_length, data.n_features, data.train_size,
+        archi = args.archi, **hyperparams)
 
-    checkpoint_file = get_checkpoint(base_log_dir, version=None)
+
 
     logger = TBLogger(
         Path(base_log_dir),# ,f"lightning_logs/{args.net}"),
@@ -72,12 +95,12 @@ def complete_training_testing_tyxe(args):
 
     monitor = f"{dnn.loss_name}/val"
     #checkpoint_callback = ModelCheckpoint(checkpoint_dir)
-    earlystopping_callback = EarlyStopping(monitor=monitor, patience=5)
+    earlystopping_callback = EarlyStopping(monitor=monitor, patience=25)
 
     trainer = pl.Trainer(
-        #default_root_dir=checkpoint_dir,
-        gpus=[0], # For now, only on one GPU possible, because Pyro prior's device determines where the code is executed
-        max_epochs=1000,
+        default_root_dir=base_log_dir,
+        gpus=[0], #
+        max_epochs=2000,
         log_every_n_steps=2,
         logger=logger,
         callbacks=[
@@ -86,6 +109,18 @@ def complete_training_testing_tyxe(args):
     )
 
     trainer.fit(dnn, data)
+
+    checkpoint_file = get_checkpoint(base_log_dir, version=None)
+    data = NCMAPSSDataModule(args.data_path, batch_size=10000)
+    dnn = NCMAPSSModelBnn.load_from_checkpoint(checkpoint_file, 
+            map_location=torch.device("cuda:0"))
+
+    trainer = pl.Trainer(
+        gpus=[0], 
+        log_every_n_steps=10, 
+        logger=logger, 
+        max_epochs=-1
+        ) # Silence warning
     trainer.test(dnn, data, verbose=False)
 
     predLog = PredLogger(base_log_dir)
@@ -111,28 +146,24 @@ if __name__ == "__main__":
                     default='dnn',
                     metavar='NAME',
                     help='Name of this specific run. (default: dnn)')
-    parser.add_argument('--net',
+    parser.add_argument('--archi',
                     type=str,
                     default='linear',
-                    metavar='NET',
+                    metavar='ARCHI',
                     help='Which model to run. (default: linear')
     parser.add_argument('--lr',
                         type=float,
                         default=1.0,
                         metavar='LR',
                         help='learning rate (default: 1.0)')
+    parser.add_argument('--pretrain',
+                        type=int,
+                        metavar='PRETRAIN',
+                        default=0,
+                        help='Pretrain the BNN weights for x epoch. (default: 0)')
 
     args = parser.parse_args()
     
-    args.const_bnn_prior_parameters = {
-        "prior_mu": 0.0,
-        "prior_sigma": 1,
-        "posterior_mu_init": 0.0,
-        "posterior_rho_init": -3.0,
-        "type": "Reparameterization",  # Flipout or Reparameterization
-        "moped_enable": False,  # True to initialize mu/sigma from the pretrained dnn weights
-        "moped_delta": 0.5,
-    }
 
 
     #complete_training_testing_freq(args)

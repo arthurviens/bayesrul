@@ -22,6 +22,7 @@ pyro-ppl = "~1.4"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
+optuna = "^2.10.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
