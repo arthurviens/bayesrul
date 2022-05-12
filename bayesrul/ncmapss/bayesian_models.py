@@ -1,48 +1,29 @@
-import os
 import contextlib
 from types import SimpleNamespace
 from functools import partial
-from pathlib import Path
 import pytorch_lightning as pl
-from pytorch_lightning.lite import LightningLite
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning.loops import Loop, FitLoop
 import torch
 import torch.nn as nn
-from bayesrul.ncmapss.frequentist_models import get_checkpoint, TBLogger, Linear, Conv, weights_init
-from bayesrul.ncmapss.dataset import NCMAPSSDataModule
+from bayesrul.ncmapss.frequentist_models import Linear, Conv, weights_init
 from torch.functional import F
+
 
 import tyxe
 import pyro
 import pyro.distributions as dist
-import pyro.infer.autoguide as ag
+import pyro.nn as pynn
 from pyro.infer import SVI, Trace_ELBO, TraceMeanField_ELBO, MCMC
-from tqdm import tqdm
 
-from pytorch_lightning.plugins import CheckpointIO
-
-
-args = SimpleNamespace(
-    data_path="data/ncmapss/",
-    out_path="results/ncmapss/",
-    model_name="tyxe1",
-    net="linear",
-    lr=1e-4
-)
 
 
 def remove_dict_entry_startswith(dictionary, string):
     n = len(string)
     for key in dictionary:
         if string == key[:n]:
-            print(f"To remove {key}")
             dict2 = dictionary.copy()
             dict2.pop(key)
             dictionary = dict2
-    print(dictionary.keys())
     return dictionary
-
 
 
 class NCMAPSSModelBnn(pl.LightningModule):
@@ -51,21 +32,22 @@ class NCMAPSSModelBnn(pl.LightningModule):
         win_length,
         n_features,
         dataset_size,
-        net="linear",
+        archi="linear",
         mode="vi",
         fit_context="lrt",
         lr=1e-3,
         num_particles=1,
-        device=torch.device('cuda:0')
+        device=torch.device('cpu')
     ):
         super().__init__()
+        self.save_hyperparameters()
         
-        if net == "linear":
+        if archi == "linear":
             self.net = Linear(win_length, n_features)
-        elif net == "conv":
+        elif archi == "conv":
             self.net = Conv(win_length, n_features)
         else:
-            raise ValueError(f"Model architecture {net} not implemented")
+            raise ValueError(f"Model architecture {archi} not implemented")
 
         if fit_context == 'lrt':
             self.fit_ctxt = tyxe.poutine.local_reparameterization
@@ -74,9 +56,7 @@ class NCMAPSSModelBnn(pl.LightningModule):
         else:
             self.fit_ctxt = contextlib.nullcontext
 
-        self.dummy = nn.Linear(1,1)
-        #self.automatic_optimization = False
-        self.compute_freqloss = False # True does not work yet on GPU
+
         self.configure_optimizers()
         closed_form_kl = False
         self.lr = lr
@@ -94,7 +74,7 @@ class NCMAPSSModelBnn(pl.LightningModule):
             dataset_size, scale=0.5
         )
         self.guide = partial(tyxe.guides.AutoNormal, init_scale=0.5)
-        self.bnn = tyxe.VariationalBNN(self.net, self.prior, self.likelihood, self.guide)
+        self.bnn = tyxe.VariationalBNN(self.net, self.prior, self.likelihood, self.guide, name="jj")
         self.loss_name = "elbo"
         self.svi = SVI(
             self.bnn.model,
@@ -106,8 +86,8 @@ class NCMAPSSModelBnn(pl.LightningModule):
                 else Trace_ELBO(num_particles)
             ),
         )
-
         self.test_preds = {'labels': [], 'preds': [], 'stds': []}
+
 
 
     def test_step(self, batch, batch_idx):
@@ -146,26 +126,50 @@ class NCMAPSSModelBnn(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         (x, y) = batch
         
+        # As we do not use PyTorch Optimizers, it is needed in order to Pytorch
+        # Lightning to know that we are training a model, and initiate routines
+        # like checkpointing etc.
+        self.trainer.fit_loop.epoch_loop.batch_loop.manual_loop.optim_step_progress.increment_ready()
         with self.fit_ctxt():
             elbo = self.svi.step(x, y)
             m, sd = self.bnn.predict(x)
-    
+        self.trainer.fit_loop.epoch_loop.batch_loop.manual_loop.optim_step_progress.increment_completed()
+        
         mse = F.mse_loss(y, m.squeeze()).item()
         self.log("mse_loss/train", mse)
         self.log("elbo/train", elbo)
 
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.dummy.parameters(), lr=0.1)
+        """Because we use Pyro's SVI optimizer that works differently"""
+        return None
+
+
+    """def update_device(self, device):
+        self.prior = tyxe.priors.IIDPrior(
+            dist.Normal(
+                torch.tensor(0.0, device=device), 
+                torch.tensor(1.0, device=device)
+            )
+        )
+        self.bnn.update_prior(self.prior)"""
 
 
     def on_save_checkpoint(self, checkpoint):
+        """Saving Pyro's param_store for the bnn's parameters"""
         checkpoint["param_store"] = pyro.get_param_store().get_state()
+        
 
     def on_load_checkpoint(self, checkpoint):
         pyro.get_param_store().set_state(checkpoint["param_store"])
         checkpoint['state_dict'] = remove_dict_entry_startswith(checkpoint['state_dict'], 'bnn')
 
 
+    @staticmethod
+    def add_model_specific_args(parent_parser):
+        """To initialize from checkpoint, without giving init args """
+        parser = parent_parser.add_argument_group("NCMAPSSModelBnn")
+        parser.add_argument("--net", type=str, default="linear")
+        return parent_parser
 
 

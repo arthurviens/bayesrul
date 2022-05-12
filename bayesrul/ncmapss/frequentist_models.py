@@ -48,16 +48,17 @@ class Linear(nn.Module):
         self.layers = nn.Sequential(
             nn.Flatten(),
             nn.Linear(win_length * n_features, 128),
-            nn.Dropout(p=0.3),
+            #nn.Dropout(p=0.3),
             nn.ReLU(),
             nn.Linear(128, 128),
-            nn.Dropout(p=0.3),
+            #nn.Dropout(p=0.3),
             nn.ReLU(),
             nn.Linear(128, 64),
-            nn.Dropout(p=0.3),
+            #nn.Dropout(p=0.3),
             nn.ReLU(),
             nn.Linear(64, 1)
         )
+
 
     def forward(self, x):
         return self.layers(x)
@@ -159,6 +160,7 @@ class NCMAPSSModel(pl.LightningModule):
 
     @staticmethod
     def add_model_specific_args(parent_parser):
+        """To initialize from checkpoint, without giving init args """
         parser = parent_parser.add_argument_group("NCMAPSSModel")
         parser.add_argument("--net", type=str, default="linear")
         return parent_parser

@@ -2,6 +2,7 @@
 data/*
 results/*
 .vscode/
+poetry.lock
 
 # From https://github.com/github/gitignore/blob/main/Python.gitignore
 # Byte-compiled / optimized / DLL files
