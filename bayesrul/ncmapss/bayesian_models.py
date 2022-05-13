@@ -44,7 +44,7 @@ class NCMAPSSModelBnn(pl.LightningModule):
         num_particles=1,
         device=torch.device('cuda:0'),
         pretrain_file=None,
-        pretrain_init_scale=0.01,
+        pretrain_init_scale=0.1,
         **kwargs
     ):
         super().__init__()
@@ -121,7 +121,7 @@ class NCMAPSSModelBnn(pl.LightningModule):
             m, sd = self.bnn.predict(x, num_predictions=100)
         
         mse = F.mse_loss(y, m.squeeze())
-        self.log("mse_loss/test", mse)
+        self.log("mse/test", mse)
 
         return {"loss": mse, "label": batch[1], "pred": m.squeeze(), "std": sd}
 
@@ -145,7 +145,7 @@ class NCMAPSSModelBnn(pl.LightningModule):
         with self.fit_ctxt():
             m, sd = self.bnn.predict(x)
         mse = F.mse_loss(y, m.squeeze())
-        self.log("mse_loss/val", mse)
+        self.log("mse/val", mse)
 
 
     def training_step(self, batch, batch_idx):
@@ -163,7 +163,7 @@ class NCMAPSSModelBnn(pl.LightningModule):
                                     optim_step_progress.increment_completed()
         
         mse = F.mse_loss(y, m.squeeze()).item()
-        self.log("mse_loss/train", mse)
+        self.log("mse/train", mse)
         self.log("elbo/train", elbo)
 
 
