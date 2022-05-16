@@ -7,8 +7,14 @@ if __name__ == "__main__":
         out_path = "data/ncmapss/",
         test_path = "tests/",
         normalization = "min-max",
-        validation = 0.2,
-        files = ["N-CMAPSS_DS02-006", "N-CMAPSS_DS03-012"],
+        validation = 0.15,
+        files = [
+            "N-CMAPSS_DS01-005",
+            "N-CMAPSS_DS02-006", 
+            "N-CMAPSS_DS03-012", 
+            "N-CMAPSS_DS04", 
+            "N-CMAPSS_DS05"
+        ],
         subdata = ['X_s', 'A'],
         win_length=25,  # Window size
         win_step=10,    # Window step

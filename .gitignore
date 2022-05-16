@@ -3,7 +3,8 @@ data/*
 results/*
 .vscode/
 poetry.lock
-lightning_logs/*
+*lightning_logs/*
+save/*
 
 # From https://github.com/github/gitignore/blob/main/Python.gitignore
 # Byte-compiled / optimized / DLL files

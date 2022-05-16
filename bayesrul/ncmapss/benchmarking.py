@@ -7,9 +7,10 @@ from optuna.integration import PyTorchLightningPruningCallback
 import pyro
 import argparse
 import optuna
+import joblib
 
 debug = False
-EPOCHS = 2000 if not debug else 2
+EPOCHS = 150 if not debug else 2
 
 def objective(trial: optuna.trial.Trial) -> float:
     pyro.clear_param_store()
@@ -23,6 +24,8 @@ def objective(trial: optuna.trial.Trial) -> float:
     fit_context = trial.suggest_categorical("fit_context", ['lrt', 'flipout']) 
     lr = trial.suggest_float("lr", 1e-6, 1, log=True)
     args.archi = trial.suggest_categorical("args.archi", ['linear', 'conv'])
+    args.activation = trial.suggest_categorical("args.activation", 
+        ['relu', 'sigmoid'])
     #args.pretrain = trial.suggest_categorical("args.pretrain", [0, 10, 100])
 
     hyperparams = {
@@ -39,7 +42,7 @@ def objective(trial: optuna.trial.Trial) -> float:
 
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
     dnn = NCMAPSSModelBnn(data.win_length, data.n_features, data.train_size,
-        archi = args.archi, **hyperparams)
+        archi = args.archi, activation = args.activation, **hyperparams)
     
     monitor = f"mse/val"
     trainer = pl.Trainer(
@@ -88,8 +91,21 @@ if __name__ == "__main__":
     pruner: optuna.pruners.BasePruner = (
         optuna.pruners.NopPruner()
     )
-    study = optuna.create_study(direction="minimize", pruner=pruner)
-    study.optimize(objective, n_trials=100, timeout=600)
+    study = optuna.create_study(
+        direction="minimize",
+        study_name="optuna2", 
+        pruner=pruner,
+        storage="sqlite:///studies.db",
+        load_if_exists=True,
+    )
+    study.optimize(
+        objective, 
+        n_trials=100, 
+        timeout=None,
+        catch=(ValueError,),
+    )
+    #joblib.dump(study, "optuna2.pkl")
+    df = study.trials_dataframe()
 
     print("Number of finished trials: {}".format(len(study.trials)))
 

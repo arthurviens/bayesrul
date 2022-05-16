@@ -38,6 +38,7 @@ class NCMAPSSModelBnn(pl.LightningModule):
         likelihood_scale=0.5,
         vardist_scale=0.5,
         archi="linear",
+        activation="relu",
         mode="vi",
         fit_context="lrt",
         lr=1e-3,
@@ -51,9 +52,11 @@ class NCMAPSSModelBnn(pl.LightningModule):
         self.save_hyperparameters()
         
         if archi == "linear":
-            self.net = Linear(win_length, n_features).to(device=device)
+            self.net = Linear(win_length, n_features, activation=activation)\
+                .to(device=device)
         elif archi == "conv":
-            self.net = Conv(win_length, n_features).to(device=device)
+            self.net = Conv(win_length, n_features, activation=activation)\
+                .to(device=device)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 

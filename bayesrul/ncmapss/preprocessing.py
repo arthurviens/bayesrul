@@ -24,7 +24,8 @@ from ..utils.lmdb_utils import create_lmdb, make_slice
 
 
 
-ncmapss_files = ["N-CMAPSS_DS01-005",
+ncmapss_files = [
+    "N-CMAPSS_DS01-005",
     "N-CMAPSS_DS02-006",
     "N-CMAPSS_DS03-012",
     "N-CMAPSS_DS04",
@@ -112,7 +113,7 @@ def generate_parquet(args) -> None:
     path.mkdir(exist_ok=True)
     for df, prefix in zip([df_train, df_val, df_test], ["train", "val", "test"]):
         if isinstance(df, pd.DataFrame):
-            df.to_parquet(f"{path}/{prefix}_{filename}.parquet")
+            df.to_parquet(f"{path}/{prefix}_{filename}.parquet", engine="pyarrow")
 
 
 
@@ -222,7 +223,7 @@ def choose_units_for_validation(unit_repartition, validation) -> List[int]:
         "Frequencies don't add up to 1 ({})".format(unit_repartition.sum())
     assert len(unit_repartition[unit_repartition == 0]) == 0
 
-    unit_repartition.sort_values(ascending=True, inplace=True)
+    unit_repartition.sort_index(inplace=True)
     val_diff = (unit_repartition - validation).sort_values()
     below_subset = unit_repartition[unit_repartition < validation]
     

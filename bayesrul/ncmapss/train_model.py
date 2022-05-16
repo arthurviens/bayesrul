@@ -58,12 +58,12 @@ def complete_training_testing_freq(args):
 def complete_training_testing_tyxe(args, hyperparams=None):
     if hyperparams is None:
         hyperparams = {
-            'prior_loc' : 0.,
-            'prior_scale' : 1.,
-            'likelihood_scale' : 0.5,
-            'vardist_scale' : 0.50001,
+            'prior_loc' : -0.05,
+            'prior_scale' : 3.5,
+            'likelihood_scale' : 3.5,
+            'vardist_scale' : 2.6,
             'mode' : 'vi',
-            'fit_context' : 'lrt',
+            'fit_context' : 'flipout',
             'lr' : 1e-3,
             'pretrain_file' : None,
         }
@@ -82,8 +82,13 @@ def complete_training_testing_tyxe(args, hyperparams=None):
         base_log_dir.mkdir(exist_ok=True)
         torch.save(pre_net.net.state_dict(), hyperparams['pretrain_file'])
         
-    dnn = NCMAPSSModelBnn(data.win_length, data.n_features, data.train_size,
-        archi = args.archi, **hyperparams)
+    checkpoint_file = get_checkpoint(base_log_dir, version=None)
+    if checkpoint_file:
+        dnn = NCMAPSSModelBnn.load_from_checkpoint(checkpoint_file,
+            map_location=torch.device("cuda:0"))
+    else:
+        dnn = NCMAPSSModelBnn(data.win_length, data.n_features, data.train_size,
+            archi = args.archi, **hyperparams)
 
 
 
@@ -109,7 +114,6 @@ def complete_training_testing_tyxe(args, hyperparams=None):
 
     trainer.fit(dnn, data)
 
-    checkpoint_file = get_checkpoint(base_log_dir, version=None)
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
     dnn = NCMAPSSModelBnn.load_from_checkpoint(checkpoint_file, 
             map_location=torch.device("cuda:0"))

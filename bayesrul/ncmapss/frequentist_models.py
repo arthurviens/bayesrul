@@ -45,19 +45,25 @@ def weights_init(m):
 # https://github.com/kkangshen/bayesian-deep-rul/blob/master/models/
 # (Just model examples to be assessed and modified according to our needs)
 class Linear(nn.Module):
-    def __init__(self, win_length, n_features):
+    def __init__(self, win_length, n_features, activation='relu'):
         super().__init__()
+        if activation == 'relu':
+            act = nn.ReLU
+        elif activation == 'sigmoid':
+            act = nn.Sigmoid
+        else:
+            raise ValueError("Unknown activation")
         self.layers = nn.Sequential(
             nn.Flatten(),
             nn.Linear(win_length * n_features, 128),
             #nn.Dropout(p=0.3),
-            nn.ReLU(),
+            act(),
             nn.Linear(128, 128),
             #nn.Dropout(p=0.3),
-            nn.ReLU(),
+            act(),
             nn.Linear(128, 64),
             #nn.Dropout(p=0.3),
-            nn.ReLU(),
+            act(),
             nn.Linear(64, 1)
         )
 
@@ -67,14 +73,20 @@ class Linear(nn.Module):
 
 
 class Conv(nn.Module):
-    def __init__(self, win_length, n_features):
+    def __init__(self, win_length, n_features, activation='relu'):
         super().__init__()
+        if activation == 'relu':
+            act = nn.ReLU
+        elif activation == 'sigmoid':
+            act = nn.Sigmoid
+        else:
+            raise ValueError("Unknown activation")
         self.layers = nn.Sequential(
             nn.Conv2d(1, 8, kernel_size=(5, 14)),
-            nn.Sigmoid(),
+            act(),
             nn.AvgPool2d(kernel_size=(2, 1)),
             nn.Conv2d(8, 14, kernel_size=(2, 1)),
-            nn.Sigmoid(),
+            act(),
             nn.AvgPool2d(kernel_size=(2, 1)),
             nn.Flatten(),
             nn.Linear(
