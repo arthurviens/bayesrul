@@ -4,6 +4,7 @@ results/*
 .vscode/
 poetry.lock
 *lightning_logs/*
+notebooks/lightning_logs/*
 save/*
 
 # From https://github.com/github/gitignore/blob/main/Python.gitignore

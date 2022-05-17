@@ -45,7 +45,8 @@ def weights_init(m):
 # https://github.com/kkangshen/bayesian-deep-rul/blob/master/models/
 # (Just model examples to be assessed and modified according to our needs)
 class Linear(nn.Module):
-    def __init__(self, win_length, n_features, activation='relu'):
+    def __init__(self, win_length, n_features, activation='relu', 
+                dropout_freq=0):
         super().__init__()
         if activation == 'relu':
             act = nn.ReLU
@@ -53,19 +54,37 @@ class Linear(nn.Module):
             act = nn.Sigmoid
         else:
             raise ValueError("Unknown activation")
-        self.layers = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(win_length * n_features, 128),
-            #nn.Dropout(p=0.3),
-            act(),
-            nn.Linear(128, 128),
-            #nn.Dropout(p=0.3),
-            act(),
-            nn.Linear(128, 64),
-            #nn.Dropout(p=0.3),
-            act(),
-            nn.Linear(64, 1)
-        )
+
+        if dropout_freq > 0 :
+            self.layers = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(win_length * n_features, 256),
+                nn.Dropout(p=dropout_freq),
+                act(),
+                nn.Linear(256, 128),
+                nn.Dropout(p=dropout_freq),
+                act(),
+                nn.Linear(128, 128),
+                nn.Dropout(p=dropout_freq),
+                act(),
+                nn.Linear(128, 64),
+                nn.Dropout(p=dropout_freq),
+                act(),
+                nn.Linear(64, 1)
+            )
+        else:
+            self.layers = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(win_length * n_features, 256),
+                act(),
+                nn.Linear(256, 128),
+                act(),
+                nn.Linear(128, 128),
+                act(),
+                nn.Linear(128, 64),
+                act(),
+                nn.Linear(64, 1)
+            )
 
 
     def forward(self, x):
@@ -73,7 +92,8 @@ class Linear(nn.Module):
 
 
 class Conv(nn.Module):
-    def __init__(self, win_length, n_features, activation='relu'):
+    def __init__(self, win_length, n_features, activation='relu',
+                dropout_freq=0):
         super().__init__()
         if activation == 'relu':
             act = nn.ReLU
@@ -81,19 +101,40 @@ class Conv(nn.Module):
             act = nn.Sigmoid
         else:
             raise ValueError("Unknown activation")
-        self.layers = nn.Sequential(
-            nn.Conv2d(1, 8, kernel_size=(5, 14)),
-            act(),
-            nn.AvgPool2d(kernel_size=(2, 1)),
-            nn.Conv2d(8, 14, kernel_size=(2, 1)),
-            act(),
-            nn.AvgPool2d(kernel_size=(2, 1)),
-            nn.Flatten(),
-            nn.Linear(
-                14 * int((((win_length - 4) / 2) - 1) / 2) * (n_features - 13), 1
+        if dropout_freq > 0: 
+           self.layers = nn.Sequential(
+                nn.Conv2d(1, 16, kernel_size=(5, 9)),
+                nn.Dropout(p=dropout_freq),
+                act(),
+                nn.Conv2d(16, 32, kernel_size=(2, 10)),
+                nn.Dropout(p=dropout_freq),
+                act(),
+                nn.AvgPool2d(kernel_size=(2, 1)),
+                nn.Conv2d(32, 64, kernel_size=(2, 1)),
+                nn.Dropout(p=dropout_freq),
+                act(),
+                nn.AvgPool2d(kernel_size=(2, 1)),
+                nn.Flatten(),
+                nn.Linear(
+                    64 * int((int((win_length - 5) / 2) - 1) / 2) * (n_features - 17), 1
+                )
             )
-        )
-
+        else:
+            self.layers = nn.Sequential(
+                nn.Conv2d(1, 16, kernel_size=(5, 9)),
+                act(),
+                nn.Conv2d(16, 32, kernel_size=(2, 10)),
+                act(),
+                nn.AvgPool2d(kernel_size=(2, 1)),
+                nn.Conv2d(32, 64, kernel_size=(2, 1)),
+                act(),
+                nn.AvgPool2d(kernel_size=(2, 1)),
+                nn.Flatten(),
+                nn.Linear(
+                    64 * int((int((win_length - 5) / 2) - 1) / 2) * (n_features - 17), 1
+                )
+            )
+            
     def forward(self, x):
         return self.layers(x.unsqueeze(1))
 
@@ -111,9 +152,9 @@ class NCMAPSSModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         if archi == "linear":
-            self.net = Linear(win_length, n_features)
+            self.net = Linear(win_length, n_features, dropout_freq=0.25)
         elif archi == "conv":
-            self.net = Conv(win_length, n_features)
+            self.net = Conv(win_length, n_features, dropout_freq=0.25)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
@@ -140,7 +181,7 @@ class NCMAPSSModel(pl.LightningModule):
         y = y.view(-1, 1)
         y_hat = self.net(x)
         loss = self.criterion(y_hat, y)
-        self.log(f"{self.loss}_loss/{phase}", loss)
+        self.log(f"{self.loss}/{phase}", loss)
         if return_pred:
             return loss, y_hat
         else:
