@@ -27,6 +27,7 @@ pytest = "^5.2"
 optuna = "^2.10.0"
 optuna-dashboard = "^0.6.4"
 plotly = "^5.8.0"
+torchinfo = "^1.6.6"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

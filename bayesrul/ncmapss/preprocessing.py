@@ -74,12 +74,18 @@ def generate_parquet(args) -> None:
         filepath = os.path.join(args.out_path, filename)
 
         print(f"Extracting dataframes of {filename}...")
-        
+        if args.bits == 32:
+            typ = np.float32
+        else:
+            typ = np.float64
+
         train, val, test = extract_validation(
             filepath=filepath,
+            typ=typ,
             vars=args.subdata,
             validation=args.validation,
         )
+
         if i < 1: 
             df_train, df_val, df_test = train, test, val
             if len(args.files) > 1:
@@ -290,7 +296,7 @@ def linear_piece_wise_RUL(df: pd.DataFrame, drop_hs=True) -> pd.DataFrame:
 
 
 def extract_validation(
-    filepath, vars = ['X_s', 'X_v', 'T', 'A'], validation=0.00
+    filepath, typ=np.float64, vars = ['X_s', 'X_v', 'T', 'A'], validation=0.00
 ):
     """Extract train, validation and test dataframe from source file.
 
@@ -312,11 +318,11 @@ def extract_validation(
             "'validation' must be a value within [0, 1], got %.2f" % 
             validation + "."  )
 
-    df_train, df_test = _load_data_from_file(filepath, vars=vars)
+    df_train, df_test = _load_data_from_file(filepath, typ=typ, vars=vars)
     
     if 'A' in vars:
-        df_train = linear_piece_wise_RUL(df_train.copy())  # RUL modified in-place
-        df_test = linear_piece_wise_RUL(df_test.copy())    # RUL modified in-place
+        df_train = linear_piece_wise_RUL(df_train.copy()) 
+        df_test = linear_piece_wise_RUL(df_test.copy())    
     else:
         warnings.warn("'A' auxiliary variables subset was not selected."
             " RUL label will not be transformed to piece-wise linear because "
@@ -340,7 +346,7 @@ def extract_validation(
     return df_train, df_val, df_test
 
 
-def _load_data_from_file(filepath, vars = ['X_s', 'X_v', 'T', 'A']):
+def _load_data_from_file(filepath, typ=np.float64, vars = ['X_s', 'X_v', 'T', 'A']):
     """Load data from source file into a dataframe.
 
     Parameters
@@ -413,9 +419,9 @@ def _load_data_from_file(filepath, vars = ['X_s', 'X_v', 'T', 'A']):
             dev.shape, test.shape, len(varnames)
         )
         
-    df_train = pd.DataFrame(data = dev, columns = varnames)
-    df_test = pd.DataFrame(data = test, columns = varnames)
-    
+    df_train = pd.DataFrame(data = dev, columns = varnames, dtype=typ)
+    df_test = pd.DataFrame(data = test, columns = varnames, dtype=typ)
+
     return df_train, df_test
 
 
