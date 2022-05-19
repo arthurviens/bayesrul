@@ -27,33 +27,36 @@ def remove_dict_entry_startswith(dictionary, string):
     return dictionary
 
 
-class NCMAPSSModelBnn(pl.LightningModule):
+class NCMAPSSBnn(pl.LightningModule):
     def __init__(
         self,
         win_length,
         n_features,
         dataset_size,
         prior_loc=0.,
-        prior_scale=1.,
-        likelihood_scale=0.5,
-        vardist_scale=0.5,
+        prior_scale=0.1,
+        likelihood_scale=0.1,
+        q_scale=0.05,
         archi="linear",
+        activation="relu",
         mode="vi",
         fit_context="lrt",
         lr=1e-3,
         num_particles=1,
         device=torch.device('cuda:0'),
         pretrain_file=None,
-        pretrain_init_scale=0.01,
+        last_layer=False,
         **kwargs
     ):
         super().__init__()
         self.save_hyperparameters()
         
         if archi == "linear":
-            self.net = Linear(win_length, n_features).to(device=device)
+            self.net = Linear(win_length, n_features, activation=activation)\
+                .to(device=device)
         elif archi == "conv":
-            self.net = Conv(win_length, n_features).to(device=device)
+            self.net = Conv(win_length, n_features, activation=activation)\
+                .to(device=device)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
@@ -87,13 +90,31 @@ class NCMAPSSModelBnn(pl.LightningModule):
             dataset_size, scale=likelihood_scale
         )
         if pretrain_file is not None:
-            self.guide = partial(
-                tyxe.guides.AutoNormal,
-                init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(self.net),
-                init_scale=pretrain_init_scale
+            print("Initializing weight distributions from pretrained net")
+            if not last_layer:
+                self.guide = partial(
+                    tyxe.guides.AutoNormal,
+                    init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(self.net),
+                    init_scale=q_scale
                 )
+            else:
+                print("Last_layer training only")
+                for module in self.net.modules():
+                    if module is not self.net.last: # -> last layer !
+                        for param_name, param in list(module.named_parameters(recurse=False)):
+                            delattr(module, param_name)
+                            module.register_buffer(param_name, param.detach().data)
+                
+                self.guide = partial(tyxe.guides.AutoNormal,
+                    init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(self.net), 
+                    init_scale=1e-4)
+
         else:
-            self.guide = partial(tyxe.guides.AutoNormal, init_scale=vardist_scale)
+            if last_layer > 0:
+                raise ValueError("No pretrain file but last_layer True")
+            
+            self.guide = partial(tyxe.guides.AutoNormal, init_scale=q_scale)
+        
         self.bnn = tyxe.VariationalBNN(
             self.net, 
             self.prior, 
@@ -121,7 +142,7 @@ class NCMAPSSModelBnn(pl.LightningModule):
             m, sd = self.bnn.predict(x, num_predictions=100)
         
         mse = F.mse_loss(y, m.squeeze())
-        self.log("mse_loss/test", mse)
+        self.log("mse/test", mse)
 
         return {"loss": mse, "label": batch[1], "pred": m.squeeze(), "std": sd}
 
@@ -145,7 +166,7 @@ class NCMAPSSModelBnn(pl.LightningModule):
         with self.fit_ctxt():
             m, sd = self.bnn.predict(x)
         mse = F.mse_loss(y, m.squeeze())
-        self.log("mse_loss/val", mse)
+        self.log("mse/val", mse)
 
 
     def training_step(self, batch, batch_idx):
@@ -163,7 +184,7 @@ class NCMAPSSModelBnn(pl.LightningModule):
                                     optim_step_progress.increment_completed()
         
         mse = F.mse_loss(y, m.squeeze()).item()
-        self.log("mse_loss/train", mse)
+        self.log("mse/train", mse)
         self.log("elbo/train", elbo)
 
 
