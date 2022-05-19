@@ -52,6 +52,10 @@ class Linear(nn.Module):
             act = nn.ReLU
         elif activation == 'sigmoid':
             act = nn.Sigmoid
+        elif activation == 'tanh':
+            act = nn.Tanh
+        elif activation == 'leaky_relu':
+            act = nn.LeakyReLU
         else:
             raise ValueError("Unknown activation")
 
@@ -70,7 +74,6 @@ class Linear(nn.Module):
                 nn.Linear(128, 64),
                 nn.Dropout(p=dropout_freq),
                 act(),
-                nn.Linear(64, 1)
             )
         else:
             self.layers = nn.Sequential(
@@ -83,12 +86,12 @@ class Linear(nn.Module):
                 act(),
                 nn.Linear(128, 64),
                 act(),
-                nn.Linear(64, 1)
             )
+        self.last = nn.Linear(64, 1)
 
 
     def forward(self, x):
-        return self.layers(x)
+        return self.last(self.layers(x))
 
 
 class Conv(nn.Module):
@@ -99,8 +102,15 @@ class Conv(nn.Module):
             act = nn.ReLU
         elif activation == 'sigmoid':
             act = nn.Sigmoid
+        elif activation == 'tanh':
+            act = nn.Tanh
+        elif activation == 'leaky_relu':
+            act = nn.LeakyReLU
         else:
             raise ValueError("Unknown activation")
+
+
+
         if dropout_freq > 0: 
            self.layers = nn.Sequential(
                 nn.Conv2d(1, 16, kernel_size=(5, 9)),
@@ -115,9 +125,6 @@ class Conv(nn.Module):
                 act(),
                 nn.AvgPool2d(kernel_size=(2, 1)),
                 nn.Flatten(),
-                nn.Linear(
-                    64 * int((int((win_length - 5) / 2) - 1) / 2) * (n_features - 17), 1
-                )
             )
         else:
             self.layers = nn.Sequential(
@@ -130,13 +137,13 @@ class Conv(nn.Module):
                 act(),
                 nn.AvgPool2d(kernel_size=(2, 1)),
                 nn.Flatten(),
-                nn.Linear(
-                    64 * int((int((win_length - 5) / 2) - 1) / 2) * (n_features - 17), 1
-                )
             )
+        self.last = nn.Linear(
+            64 * int((int((win_length - 5) / 2) - 1) / 2) * (n_features - 17), 1
+        )
             
     def forward(self, x):
-        return self.layers(x.unsqueeze(1))
+        return self.last(self.layers(x.unsqueeze(1)))
 
 
 class NCMAPSSModel(pl.LightningModule):
@@ -147,14 +154,17 @@ class NCMAPSSModel(pl.LightningModule):
         archi="linear",
         lr=1e-3,
         weight_decay=1e-3,
-        loss='mse'
+        loss='mse',
+        activation='lrelu',
     ):
         super().__init__()
         self.save_hyperparameters()
         if archi == "linear":
-            self.net = Linear(win_length, n_features, dropout_freq=0.25)
+            self.net = Linear(win_length, n_features, activation=activation,
+                    dropout_freq=0.25)
         elif archi == "conv":
-            self.net = Conv(win_length, n_features, dropout_freq=0.25)
+            self.net = Conv(win_length, n_features, activation=activation,
+                    dropout_freq=0.25)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
@@ -227,6 +237,7 @@ class NCMAPSSPretrain(pl.LightningModule):
         win_length,
         n_features,
         archi="linear",
+        activation='relu',
         lr=1e-3,
         weight_decay=1e-3,
         loss='mse'
@@ -234,9 +245,9 @@ class NCMAPSSPretrain(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         if archi == "linear":
-            self.net = Linear(win_length, n_features)
+            self.net = Linear(win_length, n_features, activation=activation)
         elif archi == "conv":
-            self.net = Conv(win_length, n_features)
+            self.net = Conv(win_length, n_features, activation=activation)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 

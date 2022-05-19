@@ -27,16 +27,16 @@ def remove_dict_entry_startswith(dictionary, string):
     return dictionary
 
 
-class NCMAPSSModelBnn(pl.LightningModule):
+class NCMAPSSBnn(pl.LightningModule):
     def __init__(
         self,
         win_length,
         n_features,
         dataset_size,
         prior_loc=0.,
-        prior_scale=1.,
-        likelihood_scale=0.5,
-        vardist_scale=0.5,
+        prior_scale=0.1,
+        likelihood_scale=0.1,
+        q_scale=0.05,
         archi="linear",
         activation="relu",
         mode="vi",
@@ -45,7 +45,7 @@ class NCMAPSSModelBnn(pl.LightningModule):
         num_particles=1,
         device=torch.device('cuda:0'),
         pretrain_file=None,
-        pretrain_init_scale=0.1,
+        last_layer=False,
         **kwargs
     ):
         super().__init__()
@@ -90,13 +90,31 @@ class NCMAPSSModelBnn(pl.LightningModule):
             dataset_size, scale=likelihood_scale
         )
         if pretrain_file is not None:
-            self.guide = partial(
-                tyxe.guides.AutoNormal,
-                init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(self.net),
-                init_scale=pretrain_init_scale
+            print("Initializing weight distributions from pretrained net")
+            if not last_layer:
+                self.guide = partial(
+                    tyxe.guides.AutoNormal,
+                    init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(self.net),
+                    init_scale=q_scale
                 )
+            else:
+                print("Last_layer training only")
+                for module in self.net.modules():
+                    if module is not self.net.last: # -> last layer !
+                        for param_name, param in list(module.named_parameters(recurse=False)):
+                            delattr(module, param_name)
+                            module.register_buffer(param_name, param.detach().data)
+                
+                self.guide = partial(tyxe.guides.AutoNormal,
+                    init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(self.net), 
+                    init_scale=1e-4)
+
         else:
-            self.guide = partial(tyxe.guides.AutoNormal, init_scale=vardist_scale)
+            if last_layer > 0:
+                raise ValueError("No pretrain file but last_layer True")
+            
+            self.guide = partial(tyxe.guides.AutoNormal, init_scale=q_scale)
+        
         self.bnn = tyxe.VariationalBNN(
             self.net, 
             self.prior, 

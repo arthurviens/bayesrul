@@ -1,11 +1,12 @@
 from pathlib import Path
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping
+from torchinfo import summary
 
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
 from bayesrul.ncmapss.frequentist_models import NCMAPSSModel, NCMAPSSPretrain
 from bayesrul.ncmapss.frequentist_models import get_checkpoint, TBLogger
-from bayesrul.ncmapss.bayesian_models import NCMAPSSModelBnn
+from bayesrul.ncmapss.bayesian_models import NCMAPSSBnn
 from bayesrul.utils.plotting import PredLogger
 
 import torch
@@ -15,7 +16,7 @@ import argparse
 
 def complete_training_testing_freq(args):
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-    dnn = NCMAPSSModel(data.win_length, data.n_features, args.net)
+    dnn = NCMAPSSModel(data.win_length, data.n_features, args.archi)
 
     base_log_dir = Path(args.out_path, "frequentist", args.model_name)
 
@@ -27,13 +28,13 @@ def complete_training_testing_freq(args):
     )
 
 
-    monitor = f"{dnn.loss}_loss/val"
-    earlystopping_callback = EarlyStopping(monitor=monitor, patience=100)
+    monitor = f"{dnn.loss}/val"
+    earlystopping_callback = EarlyStopping(monitor=monitor, patience=50)
 
     trainer = pl.Trainer(
         default_root_dir=base_log_dir,
-        gpus=[0],
-        max_epochs=1,
+        gpus=[1],
+        max_epochs=1000,
         log_every_n_steps=2,
         logger=logger,
         callbacks=[
@@ -43,6 +44,8 @@ def complete_training_testing_freq(args):
     
     trainer.fit(dnn, data, ckpt_path=checkpoint_file)
 
+
+    checkpoint_file = get_checkpoint(base_log_dir, version=None)
 
     data = NCMAPSSDataModule(args.data_path, batch_size=1000)
     dnn = NCMAPSSModel.load_from_checkpoint(checkpoint_file)
@@ -58,53 +61,33 @@ def complete_training_testing_freq(args):
 def complete_training_testing_tyxe(args, hyperparams=None):
     if hyperparams is None:
         hyperparams = {
-            'prior_loc' : -0.05,
-            'prior_scale' : 3.5,
-            'likelihood_scale' : 3.5,
-            'vardist_scale' : 2.6,
+            'prior_loc' : 0.,
+            'prior_scale' : 0.1,
+            'likelihood_scale' : 0.1,
+            'q_scale' : 0.1,
             'mode' : 'vi',
             'fit_context' : 'flipout',
             'lr' : 1e-3,
+            'last_layer': args.last_layer,
             'pretrain_file' : None,
         }
+
+    print(hyperparams)
 
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
     base_log_dir = Path(args.out_path, "bayesian", args.model_name)
     
-    if args.pretrain > 0:
-        hyperparams['pretrain_file'] = Path(base_log_dir, 
-            'pretrained_{}.pt'.format(args.pretrain)).as_posix()
-        pre_net = NCMAPSSPretrain(data.win_length, data.n_features,
-            archi = args.archi)
-        trainer = pl.Trainer(gpus=[0], max_epochs=args.pretrain, logger=False,
-            checkpoint_callback=False)
-        trainer.fit(pre_net, data)
-        base_log_dir.mkdir(exist_ok=True)
-        torch.save(pre_net.net.state_dict(), hyperparams['pretrain_file'])
-        
-    checkpoint_file = get_checkpoint(base_log_dir, version=None)
-    if checkpoint_file:
-        dnn = NCMAPSSModelBnn.load_from_checkpoint(checkpoint_file,
-            map_location=torch.device("cuda:0"))
-    else:
-        dnn = NCMAPSSModelBnn(data.win_length, data.n_features, data.train_size,
-            archi = args.archi, **hyperparams)
-
-
-
     logger = TBLogger(
         Path(base_log_dir),# ,f"lightning_logs/{args.net}"),
         default_hp_metric=False,
     )
 
-    monitor = f"{dnn.loss_name}/val"
-    #checkpoint_callback = ModelCheckpoint(checkpoint_dir)
-    earlystopping_callback = EarlyStopping(monitor=monitor, patience=100)
-
+    monitor = f"mse/val"
+    earlystopping_callback = EarlyStopping(monitor=monitor, patience=50)
     trainer = pl.Trainer(
         default_root_dir=base_log_dir,
         gpus=[0], #
-        max_epochs=2000,
+        max_epochs=1500,
         log_every_n_steps=2,
         logger=logger,
         callbacks=[
@@ -112,10 +95,38 @@ def complete_training_testing_tyxe(args, hyperparams=None):
         ],
     )
 
+    checkpoint_file = get_checkpoint(base_log_dir, version=None)
+    if args.pretrain > 0 and checkpoint_file:
+        raise ValueError("Can not pretrain and resume from checkpoint")
+
+    if args.pretrain > 0 and (not checkpoint_file):
+        pre_net = NCMAPSSPretrain(data.win_length, data.n_features,
+            archi = args.archi)
+        pre_trainer = pl.Trainer(gpus=[0], max_epochs=args.pretrain, logger=False,
+            checkpoint_callback=False)
+
+        pretrain_dir = Path(base_log_dir, "lightning_logs",
+            f'version_{trainer.logger.version}')
+        pretrain_dir.mkdir(exist_ok=True, parents=True)
+        hyperparams['pretrain_file'] = Path(pretrain_dir,
+            f'pretrained_{args.pretrain}.pt').as_posix()
+        pre_trainer.fit(pre_net, data)
+        base_log_dir.mkdir(exist_ok=True)
+        torch.save(pre_net.net.state_dict(), hyperparams['pretrain_file'])
+        
+    if checkpoint_file:
+        dnn = NCMAPSSBnn.load_from_checkpoint(checkpoint_file,
+            map_location=torch.device("cuda:0"))
+    else:
+        dnn = NCMAPSSBnn(data.win_length, data.n_features, data.train_size,
+            archi = args.archi, **hyperparams)
+
+
+
     trainer.fit(dnn, data)
 
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-    dnn = NCMAPSSModelBnn.load_from_checkpoint(checkpoint_file, 
+    dnn = NCMAPSSBnn.load_from_checkpoint(checkpoint_file, 
             map_location=torch.device("cuda:0"))
 
     trainer = pl.Trainer(
@@ -156,18 +167,28 @@ if __name__ == "__main__":
                     help='Which model to run. (default: linear')
     parser.add_argument('--lr',
                         type=float,
-                        default=1.0,
+                        default=1e-4,
                         metavar='LR',
-                        help='learning rate (default: 1.0)')
+                        help='learning rate (default: 1e-4)')
     parser.add_argument('--pretrain',
                         type=int,
                         metavar='PRETRAIN',
                         default=0,
                         help='Pretrain the BNN weights for x epoch. (default: 0)')
+    parser.add_argument('--bayesian',
+                        action='store_true',
+                        default=False,
+                        help='Wether to train a bayesian model (default: False)')
+    parser.add_argument('--last-layer',
+                        action='store_true',
+                        default=False,
+                        help='Having only the last layer as Bayesian (default: False)')
+ 
 
     args = parser.parse_args()
     
 
-
-    #complete_training_testing_freq(args)
-    complete_training_testing_tyxe(args)
+    if args.bayesian:
+        complete_training_testing_tyxe(args)
+    else:
+        complete_training_testing_freq(args)
