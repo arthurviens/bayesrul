@@ -5,6 +5,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from bayesrul.ncmapss.frequentist_models import Linear, Conv, weights_init
+from bayesrul.ncmapss.bnn import VariationalBNN
 from torch.functional import F
 
 
@@ -13,7 +14,6 @@ import pyro
 import pyro.distributions as dist
 import pyro.nn as pynn
 from pyro.infer import SVI, Trace_ELBO, TraceMeanField_ELBO, MCMC
-
 
 
 def remove_dict_entry_startswith(dictionary, string):
@@ -34,8 +34,8 @@ class NCMAPSSBnn(pl.LightningModule):
         n_features,
         dataset_size,
         prior_loc=0.,
-        prior_scale=0.1,
-        likelihood_scale=0.1,
+        prior_scale=1,
+        likelihood_scale=0.01,
         q_scale=0.05,
         archi="linear",
         activation="relu",
@@ -52,11 +52,11 @@ class NCMAPSSBnn(pl.LightningModule):
         self.save_hyperparameters()
         
         if archi == "linear":
-            self.net = Linear(win_length, n_features, activation=activation)\
-                .to(device=device)
+            self.net = Linear(win_length, n_features, activation=activation,
+                bias=True).to(device=device)
         elif archi == "conv":
-            self.net = Conv(win_length, n_features, activation=activation)\
-                .to(device=device)
+            self.net = Conv(win_length, n_features, activation=activation, 
+                bias=True).to(device=device)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
@@ -71,13 +71,19 @@ class NCMAPSSBnn(pl.LightningModule):
         else:
             self.fit_ctxt = contextlib.nullcontext
 
-
-        self.configure_optimizers()
+        
+        #    self.fit_ctxt().__enter__()
         closed_form_kl = True
         self.lr = lr
         self.mode = mode 
         self.num_particles = num_particles
         self.loss_name = "elbo"
+        self.loss = (
+            TraceMeanField_ELBO(num_particles)
+            if closed_form_kl
+            else Trace_ELBO(num_particles)
+        )
+        self.configure_optimizers()
         self.test_preds = {'preds': [], 'labels': [], 'stds': []}
         self.net.apply(weights_init)
         self.prior = tyxe.priors.IIDPrior(
@@ -91,6 +97,8 @@ class NCMAPSSBnn(pl.LightningModule):
         )
         if pretrain_file is not None:
             print("Initializing weight distributions from pretrained net")
+            self.net.load(pretrain_file, map_location=device)
+            
             if not last_layer:
                 self.guide = partial(
                     tyxe.guides.AutoNormal,
@@ -115,7 +123,7 @@ class NCMAPSSBnn(pl.LightningModule):
             
             self.guide = partial(tyxe.guides.AutoNormal, init_scale=q_scale)
         
-        self.bnn = tyxe.VariationalBNN(
+        self.bnn = VariationalBNN(
             self.net, 
             self.prior, 
             self.likelihood, 
@@ -125,12 +133,8 @@ class NCMAPSSBnn(pl.LightningModule):
         self.svi = SVI(
             self.bnn.model,
             self.bnn.guide,
-            pyro.optim.Adam({"lr": lr}),
-            loss=(
-                TraceMeanField_ELBO(num_particles)
-                if closed_form_kl
-                else Trace_ELBO(num_particles)
-            ),
+            self.optimizer,
+            self.loss
         )
         self.test_preds = {'labels': [], 'preds': [], 'stds': []}
 
@@ -159,19 +163,35 @@ class NCMAPSSBnn(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         (x, y) = batch
-        with self.fit_ctxt():
-            elbo = self.svi.evaluate_loss(x, y)
-        self.log('elbo/val', elbo)
+        self.bnn_no_obs = pyro.poutine.block(self.bnn, hide=["obs"])
+        self.svi_no_obs = SVI(self.bnn_no_obs, self.bnn.guide,
+            self.optimizer, self.loss)
+
 
         with self.fit_ctxt():
-            m, sd = self.bnn.predict(x)
+            elbo = self.svi.evaluate_loss(x, y)
+            m, sd = self.bnn.predict(x, num_predictions=5)
+            kl = self.svi_no_obs.evaluate_loss(x)
+            
         mse = F.mse_loss(y, m.squeeze())
+
+        
+        # Permet de calculer la KL sans la likelihood
+        
+        
+        #kl = self.bnn.cached_kl_loss
+        self.log('elbo/val', elbo)
         self.log("mse/val", mse)
+        self.log('kl/val', kl)
+        self.log('likelihood/val', elbo - kl)
+        #return {'loss' : mse}
 
 
     def training_step(self, batch, batch_idx):
         (x, y) = batch
-        
+        self.bnn_no_obs = pyro.poutine.block(self.bnn, hide=["obs"])
+        self.svi_no_obs = SVI(self.bnn_no_obs, self.bnn.guide,
+            self.optimizer, self.loss)
         # As we do not use PyTorch Optimizers, it is needed in order to Pytorch
         # Lightning to know that we are training a model, and initiate routines
         # like checkpointing etc.
@@ -180,16 +200,22 @@ class NCMAPSSBnn(pl.LightningModule):
         with self.fit_ctxt():
             elbo = self.svi.step(x, y)
             m, sd = self.bnn.predict(x)
+            kl = self.svi_no_obs.evaluate_loss(x)
         self.trainer.fit_loop.epoch_loop.batch_loop.manual_loop.\
                                     optim_step_progress.increment_completed()
+        
         
         mse = F.mse_loss(y, m.squeeze()).item()
         self.log("mse/train", mse)
         self.log("elbo/train", elbo)
+        self.log('kl/train', kl)
+        self.log('likelihood/train', elbo - kl)
+        #return {'loss' : mse}
 
 
     def configure_optimizers(self):
         """Because we use Pyro's SVI optimizer that works differently"""
+        self.optimizer = pyro.optim.Adam({"lr": self.lr})
         return None
 
 

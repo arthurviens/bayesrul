@@ -62,9 +62,9 @@ def complete_training_testing_tyxe(args, hyperparams=None):
     if hyperparams is None:
         hyperparams = {
             'prior_loc' : 0.,
-            'prior_scale' : 0.1,
-            'likelihood_scale' : 0.1,
-            'q_scale' : 0.1,
+            'prior_scale' : 0.01,
+            'likelihood_scale' : 0.01,
+            'q_scale' : 0.01,
             'mode' : 'vi',
             'fit_context' : 'flipout',
             'lr' : 1e-3,
@@ -82,7 +82,7 @@ def complete_training_testing_tyxe(args, hyperparams=None):
         default_hp_metric=False,
     )
 
-    monitor = f"mse/val"
+    monitor = f"elbo/val"
     earlystopping_callback = EarlyStopping(monitor=monitor, patience=50)
     trainer = pl.Trainer(
         default_root_dir=base_log_dir,
@@ -125,17 +125,13 @@ def complete_training_testing_tyxe(args, hyperparams=None):
 
     trainer.fit(dnn, data)
 
-    data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-    dnn = NCMAPSSBnn.load_from_checkpoint(checkpoint_file, 
-            map_location=torch.device("cuda:0"))
-
-    trainer = pl.Trainer(
+    tester = pl.Trainer(
         gpus=[0], 
         log_every_n_steps=10, 
         logger=logger, 
         max_epochs=-1
         ) # Silence warning
-    trainer.test(dnn, data, verbose=False)
+    tester.test(dnn, data, verbose=False)
 
     predLog = PredLogger(base_log_dir)
     predLog.save(dnn.test_preds)

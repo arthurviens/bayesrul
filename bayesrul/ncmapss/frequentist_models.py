@@ -46,7 +46,7 @@ def weights_init(m):
 # (Just model examples to be assessed and modified according to our needs)
 class Linear(nn.Module):
     def __init__(self, win_length, n_features, activation='relu', 
-                dropout_freq=0):
+                dropout_freq=0, bias=True):
         super().__init__()
         if activation == 'relu':
             act = nn.ReLU
@@ -62,33 +62,39 @@ class Linear(nn.Module):
         if dropout_freq > 0 :
             self.layers = nn.Sequential(
                 nn.Flatten(),
-                nn.Linear(win_length * n_features, 256),
+                nn.Linear(win_length * n_features, 256, bias=bias),
                 nn.Dropout(p=dropout_freq),
                 act(),
-                nn.Linear(256, 128),
+                nn.Linear(256, 128, bias=bias),
                 nn.Dropout(p=dropout_freq),
                 act(),
-                nn.Linear(128, 128),
+                nn.Linear(128, 128, bias=bias),
                 nn.Dropout(p=dropout_freq),
                 act(),
-                nn.Linear(128, 64),
+                nn.Linear(128, 64, bias=bias),
                 nn.Dropout(p=dropout_freq),
                 act(),
             )
         else:
             self.layers = nn.Sequential(
                 nn.Flatten(),
-                nn.Linear(win_length * n_features, 256),
+                nn.Linear(win_length * n_features, 256, bias=bias),
                 act(),
-                nn.Linear(256, 128),
+                nn.Linear(256, 128, bias=bias),
                 act(),
-                nn.Linear(128, 128),
+                nn.Linear(128, 128, bias=bias),
                 act(),
-                nn.Linear(128, 64),
+                nn.Linear(128, 64, bias=bias),
                 act(),
             )
         self.last = nn.Linear(64, 1)
 
+    def save(self, path: str) -> None:
+        torch.save(self.state_dict(),path)
+
+    def load(self, path: str, map_location = torch.device('cuda:0')):
+        state_dict = torch.load(path,map_location=map_location)
+        self.load_state_dict(state_dict)
 
     def forward(self, x):
         return self.last(self.layers(x))
@@ -96,7 +102,7 @@ class Linear(nn.Module):
 
 class Conv(nn.Module):
     def __init__(self, win_length, n_features, activation='relu',
-                dropout_freq=0):
+                dropout_freq=0, bias=True):
         super().__init__()
         if activation == 'relu':
             act = nn.ReLU
@@ -113,14 +119,14 @@ class Conv(nn.Module):
 
         if dropout_freq > 0: 
            self.layers = nn.Sequential(
-                nn.Conv2d(1, 16, kernel_size=(5, 9)),
+                nn.Conv2d(1, 16, kernel_size=(5, 9), bias=bias),
                 nn.Dropout(p=dropout_freq),
                 act(),
-                nn.Conv2d(16, 32, kernel_size=(2, 10)),
+                nn.Conv2d(16, 32, kernel_size=(2, 10), bias=bias),
                 nn.Dropout(p=dropout_freq),
                 act(),
                 nn.AvgPool2d(kernel_size=(2, 1)),
-                nn.Conv2d(32, 64, kernel_size=(2, 1)),
+                nn.Conv2d(32, 64, kernel_size=(2, 1), bias=bias),
                 nn.Dropout(p=dropout_freq),
                 act(),
                 nn.AvgPool2d(kernel_size=(2, 1)),
@@ -128,12 +134,12 @@ class Conv(nn.Module):
             )
         else:
             self.layers = nn.Sequential(
-                nn.Conv2d(1, 16, kernel_size=(5, 9)),
+                nn.Conv2d(1, 16, kernel_size=(5, 9), bias=bias),
                 act(),
-                nn.Conv2d(16, 32, kernel_size=(2, 10)),
+                nn.Conv2d(16, 32, kernel_size=(2, 10), bias=bias),
                 act(),
                 nn.AvgPool2d(kernel_size=(2, 1)),
-                nn.Conv2d(32, 64, kernel_size=(2, 1)),
+                nn.Conv2d(32, 64, kernel_size=(2, 1), bias=bias),
                 act(),
                 nn.AvgPool2d(kernel_size=(2, 1)),
                 nn.Flatten(),
@@ -142,6 +148,13 @@ class Conv(nn.Module):
             64 * int((int((win_length - 5) / 2) - 1) / 2) * (n_features - 17), 1
         )
             
+    def save(self, path: str) -> None:
+        torch.save(self.state_dict(), path)
+
+    def load(self, path: str, map_location = torch.device('cuda:0')):
+        state_dict = torch.load(path, map_location=map_location)
+        self.load_state_dict(state_dict)
+
     def forward(self, x):
         return self.last(self.layers(x.unsqueeze(1)))
 
