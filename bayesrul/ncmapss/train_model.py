@@ -61,12 +61,13 @@ def complete_training_testing_freq(args):
 def complete_training_testing_tyxe(args, hyperparams=None):
     if hyperparams is None:
         hyperparams = {
+            'bias' : True,
             'prior_loc' : 0.,
-            'prior_scale' : 0.01,
-            'likelihood_scale' : 0.01,
-            'q_scale' : 0.01,
+            'prior_scale' : 10,
+            'likelihood_scale' : 100,
+            'q_scale' : 1,
             'mode' : 'vi',
-            'fit_context' : 'flipout',
+            'fit_context' : 'lrt',
             'lr' : 1e-3,
             'last_layer': args.last_layer,
             'pretrain_file' : None,
@@ -82,7 +83,7 @@ def complete_training_testing_tyxe(args, hyperparams=None):
         default_hp_metric=False,
     )
 
-    monitor = f"elbo/val"
+    monitor = f"mse/val"
     earlystopping_callback = EarlyStopping(monitor=monitor, patience=50)
     trainer = pl.Trainer(
         default_root_dir=base_log_dir,
@@ -101,7 +102,7 @@ def complete_training_testing_tyxe(args, hyperparams=None):
 
     if args.pretrain > 0 and (not checkpoint_file):
         pre_net = NCMAPSSPretrain(data.win_length, data.n_features,
-            archi = args.archi)
+            archi = args.archi, guide_base = args.guide, bias=hyperparams['bias'])
         pre_trainer = pl.Trainer(gpus=[0], max_epochs=args.pretrain, logger=False,
             checkpoint_callback=False)
 
@@ -119,7 +120,8 @@ def complete_training_testing_tyxe(args, hyperparams=None):
             map_location=torch.device("cuda:0"))
     else:
         dnn = NCMAPSSBnn(data.win_length, data.n_features, data.train_size,
-            archi = args.archi, **hyperparams)
+            archi = args.archi, device=torch.device('cuda:0'), 
+            guide_base = args.guide, **hyperparams)
 
 
 
@@ -160,7 +162,7 @@ if __name__ == "__main__":
                     type=str,
                     default='linear',
                     metavar='ARCHI',
-                    help='Which model to run. (default: linear')
+                    help='Which model to run. (default: linear)')
     parser.add_argument('--lr',
                         type=float,
                         default=1e-4,
@@ -179,6 +181,11 @@ if __name__ == "__main__":
                         action='store_true',
                         default=False,
                         help='Having only the last layer as Bayesian (default: False)')
+    parser.add_argument('--guide',
+                    type=str,
+                    default='normal',
+                    metavar='GUIDE',
+                    help='Normal or Radial Autoguide. (default: normal)')
  
 
     args = parser.parse_args()

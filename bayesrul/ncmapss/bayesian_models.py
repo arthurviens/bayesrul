@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 from bayesrul.ncmapss.frequentist_models import Linear, Conv, weights_init
 from bayesrul.ncmapss.bnn import VariationalBNN
+from bayesrul.ncmapss.radial import AutoRadial
 from torch.functional import F
 
 
@@ -33,14 +34,16 @@ class NCMAPSSBnn(pl.LightningModule):
         win_length,
         n_features,
         dataset_size,
+        bias = True,
         prior_loc=0.,
-        prior_scale=1,
-        likelihood_scale=0.01,
-        q_scale=0.05,
+        prior_scale=100,
+        likelihood_scale=0.1,
+        q_scale=1,
         archi="linear",
         activation="relu",
         mode="vi",
-        fit_context="lrt",
+        fit_context="flipout",
+        guide_base="normal",
         lr=1e-3,
         num_particles=1,
         device=torch.device('cuda:0'),
@@ -53,10 +56,10 @@ class NCMAPSSBnn(pl.LightningModule):
         
         if archi == "linear":
             self.net = Linear(win_length, n_features, activation=activation,
-                bias=True).to(device=device)
+                bias=bias).to(device=device)
         elif archi == "conv":
             self.net = Conv(win_length, n_features, activation=activation, 
-                bias=True).to(device=device)
+                bias=bias).to(device=device)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
@@ -71,6 +74,13 @@ class NCMAPSSBnn(pl.LightningModule):
         else:
             self.fit_ctxt = contextlib.nullcontext
 
+        if guide_base == 'normal':
+            guide_base = tyxe.guides.AutoNormal
+        elif guide_base == 'radial':
+            guide_base = AutoRadial
+            print("Using Radial Guide")
+        else: 
+            raise ValueError("Guide unknown. Choose from 'normal', 'radial'.")
         
         #    self.fit_ctxt().__enter__()
         closed_form_kl = True
@@ -101,7 +111,7 @@ class NCMAPSSBnn(pl.LightningModule):
             
             if not last_layer:
                 self.guide = partial(
-                    tyxe.guides.AutoNormal,
+                    guide_base,
                     init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(self.net),
                     init_scale=q_scale
                 )
@@ -113,15 +123,15 @@ class NCMAPSSBnn(pl.LightningModule):
                             delattr(module, param_name)
                             module.register_buffer(param_name, param.detach().data)
                 
-                self.guide = partial(tyxe.guides.AutoNormal,
+                self.guide = partial(guide_base,
                     init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(self.net), 
-                    init_scale=1e-4)
+                    init_scale=q_scale)
 
         else:
             if last_layer > 0:
                 raise ValueError("No pretrain file but last_layer True")
             
-            self.guide = partial(tyxe.guides.AutoNormal, init_scale=q_scale)
+            self.guide = partial(guide_base, init_scale=q_scale)
         
         self.bnn = VariationalBNN(
             self.net, 
@@ -145,7 +155,7 @@ class NCMAPSSBnn(pl.LightningModule):
         with self.fit_ctxt():
             m, sd = self.bnn.predict(x, num_predictions=100)
         
-        mse = F.mse_loss(y, m.squeeze())
+        mse = F.mse_loss(y.squeeze(), m.squeeze())
         self.log("mse/test", mse)
 
         return {"loss": mse, "label": batch[1], "pred": m.squeeze(), "std": sd}
@@ -173,7 +183,7 @@ class NCMAPSSBnn(pl.LightningModule):
             m, sd = self.bnn.predict(x, num_predictions=5)
             kl = self.svi_no_obs.evaluate_loss(x)
             
-        mse = F.mse_loss(y, m.squeeze())
+        mse = F.mse_loss(y.squeeze(), m.squeeze())
 
         
         # Permet de calculer la KL sans la likelihood
@@ -205,7 +215,7 @@ class NCMAPSSBnn(pl.LightningModule):
                                     optim_step_progress.increment_completed()
         
         
-        mse = F.mse_loss(y, m.squeeze()).item()
+        mse = F.mse_loss(y.squeeze(), m.squeeze()).item()
         self.log("mse/train", mse)
         self.log("elbo/train", elbo)
         self.log('kl/train', kl)

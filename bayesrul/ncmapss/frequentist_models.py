@@ -164,6 +164,7 @@ class NCMAPSSModel(pl.LightningModule):
         self,
         win_length,
         n_features,
+        bias=True,
         archi="linear",
         lr=1e-3,
         weight_decay=1e-3,
@@ -174,10 +175,10 @@ class NCMAPSSModel(pl.LightningModule):
         self.save_hyperparameters()
         if archi == "linear":
             self.net = Linear(win_length, n_features, activation=activation,
-                    dropout_freq=0.25)
+                    dropout_freq=0.25, bias=bias)
         elif archi == "conv":
             self.net = Conv(win_length, n_features, activation=activation,
-                    dropout_freq=0.25)
+                    dropout_freq=0.25, bias=bias)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
@@ -249,6 +250,7 @@ class NCMAPSSPretrain(pl.LightningModule):
         self,
         win_length,
         n_features,
+        bias=True,
         archi="linear",
         activation='relu',
         lr=1e-3,
@@ -258,9 +260,11 @@ class NCMAPSSPretrain(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         if archi == "linear":
-            self.net = Linear(win_length, n_features, activation=activation)
+            self.net = Linear(win_length, n_features, activation=activation,
+                bias = bias)
         elif archi == "conv":
-            self.net = Conv(win_length, n_features, activation=activation)
+            self.net = Conv(win_length, n_features, activation=activation,
+                bias = bias)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 

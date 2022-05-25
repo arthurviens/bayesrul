@@ -6,6 +6,10 @@ poetry.lock
 *lightning_logs/*
 notebooks/lightning_logs/*
 save/*
+*.db
+notebooks/explo*
+notebooks/*.pt
+notebooks/*test*
 
 # From https://github.com/github/gitignore/blob/main/Python.gitignore
 # Byte-compiled / optimized / DLL files
