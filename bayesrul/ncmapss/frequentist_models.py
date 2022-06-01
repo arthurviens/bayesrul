@@ -46,7 +46,7 @@ def weights_init(m):
 # (Just model examples to be assessed and modified according to our needs)
 class Linear(nn.Module):
     def __init__(self, win_length, n_features, activation='relu', 
-                dropout_freq=0, bias=True):
+                dropout_freq=0, bias=True, typ="regression"):
         super().__init__()
         if activation == 'relu':
             act = nn.ReLU
@@ -58,6 +58,11 @@ class Linear(nn.Module):
             act = nn.LeakyReLU
         else:
             raise ValueError("Unknown activation")
+
+        self.typ = typ
+        if typ == "regression": out_size = 1
+        elif typ == "classification": out_size = 10
+        else: raise ValueError(f"Unknown value for typ : {typ}")
 
         if dropout_freq > 0 :
             self.layers = nn.Sequential(
@@ -84,10 +89,11 @@ class Linear(nn.Module):
                 act(),
                 nn.Linear(128, 128, bias=bias),
                 act(),
-                nn.Linear(128, 64, bias=bias),
+                nn.Linear(128, 32, bias=bias),
                 act(),
             )
-        self.last = nn.Linear(64, 1)
+        self.last = nn.Linear(32, out_size)
+        self.softmax = nn.Softmax(dim=1)
 
     def save(self, path: str) -> None:
         torch.save(self.state_dict(),path)
@@ -97,12 +103,15 @@ class Linear(nn.Module):
         self.load_state_dict(state_dict)
 
     def forward(self, x):
-        return self.last(self.layers(x))
+        if self.typ == "regression": 
+            return self.last(self.layers(x.unsqueeze(1)))
+        elif self.typ == "classification": 
+            return self.softmax(self.last(self.layers(x.unsqueeze(1))))
 
 
 class Conv(nn.Module):
     def __init__(self, win_length, n_features, activation='relu',
-                dropout_freq=0, bias=True):
+                dropout_freq=0, bias=True, typ='regression'):
         super().__init__()
         if activation == 'relu':
             act = nn.ReLU
@@ -115,7 +124,10 @@ class Conv(nn.Module):
         else:
             raise ValueError("Unknown activation")
 
-
+        self.typ = typ
+        if typ == "regression": out_size = 1
+        elif typ == "classification": out_size = 10
+        else: raise ValueError(f"Unknown value for typ : {typ}")
 
         if dropout_freq > 0: 
            self.layers = nn.Sequential(
@@ -145,8 +157,10 @@ class Conv(nn.Module):
                 nn.Flatten(),
             )
         self.last = nn.Linear(
-            64 * int((int((win_length - 5) / 2) - 1) / 2) * (n_features - 17), 1
+            64 * int((int((win_length - 5) / 2) - 1) / 2) * (n_features - 17), 
+            out_size
         )
+        self.softmax = nn.Softmax(dim=1)
             
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)
@@ -156,7 +170,81 @@ class Conv(nn.Module):
         self.load_state_dict(state_dict)
 
     def forward(self, x):
-        return self.last(self.layers(x.unsqueeze(1)))
+        if self.typ == "regression": 
+            return self.last(self.layers(x.unsqueeze(1)))
+        elif self.typ == "classification": 
+            return self.softmax(self.last(self.layers(x.unsqueeze(1))))
+        
+class Conv2(nn.Module):
+    def __init__(self, win_length, n_features, activation='relu',
+                dropout_freq=0, bias=True, typ='regression'):
+        super().__init__()
+        if activation == 'relu':
+            act = nn.ReLU
+        elif activation == 'sigmoid':
+            act = nn.Sigmoid
+        elif activation == 'tanh':
+            act = nn.Tanh
+        elif activation == 'leaky_relu':
+            act = nn.LeakyReLU
+        else:
+            raise ValueError("Unknown activation")
+
+        self.typ = typ
+        if typ == "regression": out_size = 1
+        elif typ == "classification": out_size = 10
+        else: raise ValueError(f"Unknown value for typ : {typ}")
+
+        
+        self.softmax = nn.LogSoftmax(-1)
+        if dropout_freq > 0:
+            self.layers = nn.Sequential(
+                nn.Conv2d(1, 32, 4),
+                nn.Dropout(p = dropout_freq),
+                act(),
+                nn.Conv2d(32, 32, 4),
+                nn.Dropout(p=dropout_freq),
+                act(),
+                nn.MaxPool2d(2),
+                nn.Flatten(),
+                nn.Linear(
+                    int((win_length - 6) / 2) * int((n_features - 6) / 2) * 32, 
+                    128
+                ),
+                nn.Dropout(p = dropout_freq),
+                act()
+            )
+        else: 
+            self.layers = nn.Sequential(
+                nn.Conv2d(1, 32, 5, padding='same'),
+                act(),
+                nn.MaxPool2d(2),
+                nn.Conv2d(32, 32, 5, padding='same'),
+                act(),
+                nn.MaxPool2d(2),
+                nn.Flatten(),
+                nn.Linear(
+                    int(int((win_length + 4 - 4) / 2 + 4 - 4) / 2) 
+                    * int(int((n_features + 4 - 4) / 2 + 4 - 4) / 2) * 32, 
+                    1024
+                ),
+                act()
+            )
+        self.last = nn.Linear(1024, out_size)
+
+    def save(self, path: str) -> None:
+        torch.save(self.state_dict(), path)
+
+    def load(self, path: str, map_location = torch.device('cuda:0')):
+        state_dict = torch.load(path, map_location=map_location)
+        self.load_state_dict(state_dict)
+
+    def forward(self, x):
+        if self.typ == "regression": 
+            return self.last(self.layers(x.unsqueeze(1)))
+        elif self.typ == "classification": 
+            return self.softmax(self.last(self.layers(x.unsqueeze(1))))
+        
 
 
 class NCMAPSSModel(pl.LightningModule):
@@ -166,6 +254,7 @@ class NCMAPSSModel(pl.LightningModule):
         n_features,
         bias=True,
         archi="linear",
+        typ="regression",
         lr=1e-3,
         weight_decay=1e-3,
         loss='mse',
@@ -175,10 +264,10 @@ class NCMAPSSModel(pl.LightningModule):
         self.save_hyperparameters()
         if archi == "linear":
             self.net = Linear(win_length, n_features, activation=activation,
-                    dropout_freq=0.25, bias=bias)
+                    dropout_freq=0.25, bias=bias, typ=typ)
         elif archi == "conv":
             self.net = Conv(win_length, n_features, activation=activation,
-                    dropout_freq=0.25, bias=bias)
+                    dropout_freq=0.25, bias=bias, typ=typ)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
@@ -252,6 +341,7 @@ class NCMAPSSPretrain(pl.LightningModule):
         n_features,
         bias=True,
         archi="linear",
+        typ="regression",
         activation='relu',
         lr=1e-3,
         weight_decay=1e-3,
@@ -261,10 +351,10 @@ class NCMAPSSPretrain(pl.LightningModule):
         self.save_hyperparameters()
         if archi == "linear":
             self.net = Linear(win_length, n_features, activation=activation,
-                bias = bias)
+                bias = bias, typ=typ)
         elif archi == "conv":
             self.net = Conv(win_length, n_features, activation=activation,
-                bias = bias)
+                bias = bias, typ=typ)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 

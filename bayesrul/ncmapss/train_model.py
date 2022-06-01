@@ -62,18 +62,21 @@ def complete_training_testing_tyxe(args, hyperparams=None):
     if hyperparams is None:
         hyperparams = {
             'bias' : True,
-            'prior_loc' : 0.,
+            'prior_loc' : 1,
             'prior_scale' : 10,
-            'likelihood_scale' : 100,
-            'q_scale' : 1,
+            'likelihood_scale' : 10,
+            'q_scale' : .01,
             'mode' : 'vi',
-            'fit_context' : 'lrt',
-            'lr' : 1e-3,
+            'fit_context' : 'flipout',
+            'num_particles' : 1,
+            'lr' : 1e-2,
             'last_layer': args.last_layer,
             'pretrain_file' : None,
         }
 
+    print(args)
     print(hyperparams)
+    if args.guide == "radial": hyperparams["fit_context"] = 'null'
 
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
     base_log_dir = Path(args.out_path, "bayesian", args.model_name)
@@ -87,7 +90,7 @@ def complete_training_testing_tyxe(args, hyperparams=None):
     earlystopping_callback = EarlyStopping(monitor=monitor, patience=50)
     trainer = pl.Trainer(
         default_root_dir=base_log_dir,
-        gpus=[0], #
+        gpus=[0], 
         max_epochs=1500,
         log_every_n_steps=2,
         logger=logger,
@@ -102,7 +105,7 @@ def complete_training_testing_tyxe(args, hyperparams=None):
 
     if args.pretrain > 0 and (not checkpoint_file):
         pre_net = NCMAPSSPretrain(data.win_length, data.n_features,
-            archi = args.archi, guide_base = args.guide, bias=hyperparams['bias'])
+            archi = args.archi, bias=hyperparams['bias'])
         pre_trainer = pl.Trainer(gpus=[0], max_epochs=args.pretrain, logger=False,
             checkpoint_callback=False)
 
@@ -131,8 +134,8 @@ def complete_training_testing_tyxe(args, hyperparams=None):
         gpus=[0], 
         log_every_n_steps=10, 
         logger=logger, 
-        max_epochs=-1
-        ) # Silence warning
+        max_epochs=-1 # Silence warning
+        ) 
     tester.test(dnn, data, verbose=False)
 
     predLog = PredLogger(base_log_dir)
@@ -157,7 +160,8 @@ if __name__ == "__main__":
                     type=str,
                     default='dnn',
                     metavar='NAME',
-                    help='Name of this specific run. (default: dnn)')
+                    help='Name of this specific run. (default: dnn)',
+                    required=True)
     parser.add_argument('--archi',
                     type=str,
                     default='linear',
