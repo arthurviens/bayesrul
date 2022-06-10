@@ -6,6 +6,8 @@ import torch.nn as nn
 from pytorch_lightning.utilities import rank_zero_only
 from torch.functional import F
 
+from bayesrul.ncmapss.inception import InceptionModel
+
 
 def get_checkpoint(path, version=None) -> None:
     try:
@@ -60,7 +62,7 @@ class Linear(nn.Module):
             raise ValueError("Unknown activation")
 
         self.typ = typ
-        if typ == "regression": out_size = 1
+        if typ == "regression": out_size = 2
         elif typ == "classification": out_size = 10
         else: raise ValueError(f"Unknown value for typ : {typ}")
 
@@ -125,7 +127,7 @@ class Conv(nn.Module):
             raise ValueError("Unknown activation")
 
         self.typ = typ
-        if typ == "regression": out_size = 1
+        if typ == "regression": out_size = 2
         elif typ == "classification": out_size = 10
         else: raise ValueError(f"Unknown value for typ : {typ}")
 
@@ -191,8 +193,8 @@ class Conv2(nn.Module):
             raise ValueError("Unknown activation")
 
         self.typ = typ
-        if typ == "regression": out_size = 1
-        elif typ == "classification": out_size = 10
+        if typ == "regression": self.out_size = 2
+        elif typ == "classification": self.out_size = 10
         else: raise ValueError(f"Unknown value for typ : {typ}")
 
         
@@ -230,7 +232,7 @@ class Conv2(nn.Module):
                 ),
                 act()
             )
-        self.last = nn.Linear(1024, out_size)
+        self.last = nn.Linear(1024, self.out_size)
 
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)
@@ -258,16 +260,19 @@ class NCMAPSSModel(pl.LightningModule):
         lr=1e-3,
         weight_decay=1e-3,
         loss='mse',
-        activation='lrelu',
+        activation='relu',
     ):
         super().__init__()
         self.save_hyperparameters()
+        
         if archi == "linear":
             self.net = Linear(win_length, n_features, activation=activation,
                     dropout_freq=0.25, bias=bias, typ=typ)
         elif archi == "conv":
             self.net = Conv(win_length, n_features, activation=activation,
                     dropout_freq=0.25, bias=bias, typ=typ)
+        elif archi == "inception":
+            self.net = InceptionModel(activation=activation, bias=bias)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
@@ -292,8 +297,14 @@ class NCMAPSSModel(pl.LightningModule):
     def _compute_loss(self, batch, phase, return_pred=False): 
         (x, y) = batch
         y = y.view(-1, 1)
-        y_hat = self.net(x)
-        loss = self.criterion(y_hat, y)
+        output = self.net(x)
+        try:
+            y_hat = output[:, 0]
+            sd = output[:, 1]
+        except:
+            y_hat = output
+        loss = self.criterion(y_hat, y)        
+        
         self.log(f"{self.loss}/{phase}", loss)
         if return_pred:
             return loss, y_hat
@@ -355,6 +366,8 @@ class NCMAPSSPretrain(pl.LightningModule):
         elif archi == "conv":
             self.net = Conv(win_length, n_features, activation=activation,
                 bias = bias, typ=typ)
+        elif archi == "inception":
+            self.net = InceptionModel(activation=activation, bias = bias)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
@@ -377,9 +390,15 @@ class NCMAPSSPretrain(pl.LightningModule):
 
     def _compute_loss(self, batch, phase, return_pred=False): 
         (x, y) = batch
-        y = y.view(-1, 1)
-        y_hat = self.net(x)
-        loss = self.criterion(y_hat, y)
+        y = y.view(-1, 1).to(torch.float32)
+        output = self.net(x)
+        try:
+            y_hat = output[:, 0]
+            sd = output[:, 1]
+        except:
+            y_hat = output
+        #print(f"Output shape {output.shape}, then y_hat {y_hat.shape} then y {y.shape}")
+        loss = self.criterion(y_hat, y.squeeze())
         if return_pred:
             return loss, y_hat
         else:

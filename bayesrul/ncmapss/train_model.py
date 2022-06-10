@@ -16,7 +16,7 @@ import argparse
 
 def complete_training_testing_freq(args):
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-    dnn = NCMAPSSModel(data.win_length, data.n_features, args.archi)
+    dnn = NCMAPSSModel(data.win_length, data.n_features, archi = args.archi)
 
     base_log_dir = Path(args.out_path, "frequentist", args.model_name)
 
@@ -58,18 +58,19 @@ def complete_training_testing_freq(args):
 
 
 
-def complete_training_testing_tyxe(args, hyperparams=None):
+def complete_training_testing_tyxe(args, hyperparams=None, GPU = 1):
     if hyperparams is None:
         hyperparams = {
             'bias' : True,
-            'prior_loc' : 1,
-            'prior_scale' : 10,
+            'prior_loc' : 0,
+            'prior_scale' : 0.5,
             'likelihood_scale' : 10,
-            'q_scale' : .01,
+            'q_scale' : .001,
             'mode' : 'vi',
-            'fit_context' : 'flipout',
+            'fit_context' : 'lrt',
             'num_particles' : 1,
-            'lr' : 1e-2,
+            'optimizer': 'adam',
+            'lr' : 1e-3,
             'last_layer': args.last_layer,
             'pretrain_file' : None,
         }
@@ -87,16 +88,14 @@ def complete_training_testing_tyxe(args, hyperparams=None):
     )
 
     monitor = f"mse/val"
-    earlystopping_callback = EarlyStopping(monitor=monitor, patience=50)
+    #earlystopping_callback = EarlyStopping(monitor=monitor, patience=50)
     trainer = pl.Trainer(
         default_root_dir=base_log_dir,
-        gpus=[0], 
-        max_epochs=1500,
+        gpus=[GPU], 
+        max_epochs=150,
         log_every_n_steps=2,
         logger=logger,
-        callbacks=[
-            earlystopping_callback,
-        ],
+        #callbacks=[earlystopping_callback],
     )
 
     checkpoint_file = get_checkpoint(base_log_dir, version=None)
@@ -106,7 +105,7 @@ def complete_training_testing_tyxe(args, hyperparams=None):
     if args.pretrain > 0 and (not checkpoint_file):
         pre_net = NCMAPSSPretrain(data.win_length, data.n_features,
             archi = args.archi, bias=hyperparams['bias'])
-        pre_trainer = pl.Trainer(gpus=[0], max_epochs=args.pretrain, logger=False,
+        pre_trainer = pl.Trainer(gpus=[GPU], max_epochs=args.pretrain, logger=False,
             checkpoint_callback=False)
 
         pretrain_dir = Path(base_log_dir, "lightning_logs",
@@ -120,10 +119,10 @@ def complete_training_testing_tyxe(args, hyperparams=None):
         
     if checkpoint_file:
         dnn = NCMAPSSBnn.load_from_checkpoint(checkpoint_file,
-            map_location=torch.device("cuda:0"))
+            map_location=torch.device(f"cuda:{GPU}"))
     else:
         dnn = NCMAPSSBnn(data.win_length, data.n_features, data.train_size,
-            archi = args.archi, device=torch.device('cuda:0'), 
+            archi = args.archi, device=torch.device(f"cuda:{GPU}"), 
             guide_base = args.guide, **hyperparams)
 
 
@@ -131,7 +130,7 @@ def complete_training_testing_tyxe(args, hyperparams=None):
     trainer.fit(dnn, data)
 
     tester = pl.Trainer(
-        gpus=[0], 
+        gpus=[GPU], 
         log_every_n_steps=10, 
         logger=logger, 
         max_epochs=-1 # Silence warning

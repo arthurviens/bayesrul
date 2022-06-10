@@ -19,23 +19,23 @@ def objective(trial: optuna.trial.Trial) -> float:
     pyro.clear_param_store()
 
     #bias = trial.suggest_categorical("bias", [True, False])
-    prior_loc = trial.suggest_float("prior_loc", -0.2, 0.2)
-    prior_scale = trial.suggest_float("prior_scale", 1e-2, 1e4, log=True)
-    likelihood_scale = trial.suggest_float("likelihood_scale", 1e-3, 1e3, log=True)
+    prior_loc = 0 #trial.suggest_float("prior_loc", -0.2, 0.2)
+    prior_scale = trial.suggest_float("prior_scale", 1e-4, 2, log=True)
+    likelihood_scale = trial.suggest_float("likelihood_scale", 1e-2, 1e2, log=True)
     q_scale = trial.suggest_float("q_scale", 1e-4, 5e2, log=True)
     fit_context = trial.suggest_categorical("fit_context", ['lrt', 'flipout']) 
     lr = trial.suggest_float("lr", 1e-4, 1, log=True)
-    num_particles = trial.suggest_categorical("num_particles", [1, 5, 15])
+    num_particles = trial.suggest_categorical("num_particles", [1, 3, 5])
     guide_base = trial.suggest_categorical("guide_base", ['normal', 'radial'])
     args.archi = trial.suggest_categorical("args.archi", ['linear', 'conv'])
     args.activation = trial.suggest_categorical("args.activation", 
-        ['sigmoid', 'tanh', 'leaky_relu'])
+        ['sigmoid', 'tanh', 'relu'])
     args.last_layer = trial.suggest_categorical("args.last_layer", [True, False])
-    args.pretrain = trial.suggest_categorical("args.pretrain", [0, 50, 100])
+    args.pretrain = trial.suggest_categorical("args.pretrain", [0, 100])
 
 
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-    monitor = f"elbo/val"
+    monitor = f"mse/val"
     trainer = pl.Trainer(
         gpus=[2],
         logger=True,
