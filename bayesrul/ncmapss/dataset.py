@@ -7,7 +7,7 @@ class NCMAPSSLmdbDataset(LmdbDataset):
     def __getitem__(self, i: int):
         sample = super().__getitem__(i)
         rul = self.dtype(super().get(f"rul_{i}", numpy=False))
-        return sample.copy(), rul
+        return sample.copy(), rul / 84.
 
 
 class NCMAPSSLmdbDatasetAll(NCMAPSSLmdbDataset):
@@ -49,7 +49,7 @@ class NCMAPSSDataModule(pl.LightningDataModule):
             self.datasets["train"],
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=10,
+            num_workers=3,
             pin_memory=True,
         )
 
@@ -57,7 +57,7 @@ class NCMAPSSDataModule(pl.LightningDataModule):
         return DataLoader(
             self.datasets["val"],
             batch_size=self.batch_size,
-            num_workers=10,
+            num_workers=3,
             pin_memory=True,
         )
 
@@ -65,6 +65,6 @@ class NCMAPSSDataModule(pl.LightningDataModule):
         return DataLoader(
             self.datasets["test"],
             batch_size=self.batch_size,
-            num_workers=10,
+            num_workers=2,
             pin_memory=True,
         )

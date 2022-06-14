@@ -5,15 +5,17 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from bayesrul.ncmapss.frequentist_models import Linear, Conv, Conv2, weights_init
-from bayesrul.dependencies.tyxe.bnn import VariationalBNN
+from bayesrul.ncmapss.inception import InceptionModel
+from tyxe.bnn import VariationalBNN
 from bayesrul.ncmapss.radial import AutoRadial
+from bayesrul.ncmapss.custom_elbos import CustomTrace_ELBO
 from torch.functional import F
 
 
 import tyxe
 import pyro
 import pyro.distributions as dist
-import pyro.nn as pynn
+import pyro.poutine as poutine
 from pyro.infer import SVI, Trace_ELBO, TraceMeanField_ELBO, MCMC
 
 
@@ -27,6 +29,27 @@ def remove_dict_entry_startswith(dictionary, string):
             dictionary = dict2
     return dictionary
 
+def inverse_softplus(t):
+    return t.expm1().log()
+
+def custom_elbo(model, guide, *args, **kwargs):
+    guide_trace = poutine.trace(guide).get_trace(*args, **kwargs)
+    model_trace = poutine.trace(poutine.replay(model, guide_trace)).get_trace(
+        *args, **kwargs
+    )
+    
+    try:
+        obs = args[1].view(-1, 1)
+    except IndexError:
+        return 0.
+    #for name, model_site in model_trace.nodes.items():
+    #    print(f"---------------> NODE {name}")
+    #    print(model_site)
+    pred, var = model_trace.nodes["likelihood.data_plate"]["value"].chunk(2, dim=-1)
+    nll_loss = nn.GaussianNLLLoss(reduction="sum")
+    nll = nll_loss(pred, obs, var)
+    return nll
+
 
 class NCMAPSSBnn(pl.LightningModule):
     def __init__(
@@ -37,13 +60,15 @@ class NCMAPSSBnn(pl.LightningModule):
         bias = True,
         prior_loc=0.,
         prior_scale=10,
+        prior='gaussian',
         likelihood_scale=3,
         q_scale=0.01,
-        archi="linear",
+        archi="inception",
         activation="relu",
         mode="vi",
         fit_context="flipout",
         guide_base="normal",
+        optimizer='nadam',
         lr=1e-3,
         num_particles=1,
         device=torch.device('cuda:0'),
@@ -61,6 +86,9 @@ class NCMAPSSBnn(pl.LightningModule):
         elif archi == "conv":
             self.net = Conv(win_length, n_features, activation=activation, 
                 bias=bias, typ='regression').to(device=device)
+        elif archi == "inception":
+            self.net = InceptionModel(activation=activation, 
+                bias=bias).to(device=device)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
@@ -84,29 +112,44 @@ class NCMAPSSBnn(pl.LightningModule):
         else: 
             raise ValueError("Guide unknown. Choose from 'normal', 'radial'.")
         
-        #    self.fit_ctxt().__enter__()
+
+        self.dataset_size = dataset_size
         self.lr = lr
         self.mode = mode 
         self.num_particles = num_particles
         self.loss_name = "elbo"
-        self.loss = (
+        """self.loss = (
             TraceMeanField_ELBO(num_particles)
             if closed_form_kl
             else Trace_ELBO(num_particles)
-        )
+        )"""
+        self.loss = CustomTrace_ELBO(num_particles)
+        self.opt_name = optimizer
         self.configure_optimizers()
         self.test_preds = {'preds': [], 'labels': [], 'stds': []}
         self.net.apply(weights_init)
-        prior_kwargs = {}#{'hide_all': True}
-        self.prior = tyxe.priors.IIDPrior(
-            dist.Normal(
-                torch.tensor(float(prior_loc), device=device), 
-                torch.tensor(float(prior_scale), device=device),
-            ), **prior_kwargs
-        )
+        prior_kwargs = {'hide_all': True}
         
-        self.likelihood = tyxe.likelihoods.HomoskedasticGaussian(
-            dataset_size, scale=likelihood_scale
+        if prior == 'gaussian':
+            self.prior = tyxe.priors.IIDPrior(
+                dist.Normal(
+                    torch.tensor(float(prior_loc), device=device), 
+                    torch.tensor(float(prior_scale), device=device),
+                ), **prior_kwargs
+            )
+        elif prior == 'laplace':
+            self.prior = tyxe.priors.IIDPrior(
+                dist.Laplace(
+                    torch.tensor(float(prior_loc), device=device), 
+                    torch.tensor(float(prior_scale), device=device),
+                ), **prior_kwargs
+            )
+            closed_form_kl = False
+        else: 
+            raise ValueError("Guide unknown. Choose from 'normal', 'radial'.")
+        
+        self.likelihood = tyxe.likelihoods.HeteroskedasticGaussian(
+            dataset_size, #scale=likelihood_scale
         )
         if pretrain_file is not None:
             print("Initializing weight distributions from pretrained net")
@@ -135,17 +178,17 @@ class NCMAPSSBnn(pl.LightningModule):
                 raise ValueError("No pretrain file but last_layer True")
             
             self.guide = partial(guide_base, init_scale=q_scale)
+        self.guide = None
         
         self.bnn = VariationalBNN(
             self.net, 
             self.prior, 
             self.likelihood, 
-            self.guide, 
-            name="bnn"
+            self.guide,
             )
         self.svi = SVI(
-            self.bnn.model,
-            self.bnn.guide,
+            pyro.poutine.scale(self.bnn.model, scale=1./(dataset_size * win_length * n_features)),
+            pyro.poutine.scale(self.bnn.guide, scale=1./(dataset_size * win_length * n_features)),
             self.optimizer,
             self.loss
         )
@@ -156,13 +199,19 @@ class NCMAPSSBnn(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         (x, y) = batch[0], batch[1].squeeze()
         with self.fit_ctxt():
-            m, sd = self.bnn.predict(x, num_predictions=100)
+            output = self.bnn.predict(x, num_predictions=5)
+            if isinstance(output, tuple):
+                m, sd = output
+            else:
+                m, sd = output[:, 0], output[:, 1]
         
         mse = F.mse_loss(y.squeeze(), m.squeeze())
         self.log("mse/test", mse)
 
-        return {"loss": mse, "label": batch[1], "pred": m.squeeze(), "std": sd}
-
+        try:
+            return {"loss": mse, "label": batch[1], "pred": m.squeeze(), "std": sd}
+        except NameError:
+            return {"loss": mse, "label": batch[1], "pred": m.squeeze()}
 
     def test_epoch_end(self, outputs):
         for output in outputs:
@@ -176,23 +225,23 @@ class NCMAPSSBnn(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         (x, y) = batch[0], batch[1].squeeze()
+        
+        # To compute only the KL part of the loss (no obs = no likelihood)
         self.bnn_no_obs = pyro.poutine.block(self.bnn, hide=["obs"])
         self.svi_no_obs = SVI(self.bnn_no_obs, self.bnn.guide,
             self.optimizer, self.loss)
 
-
         with self.fit_ctxt():
             elbo = self.svi.evaluate_loss(x, y)
-            m, sd = self.bnn.predict(x, num_predictions=5)
+            output = self.bnn.predict(x, num_predictions=5)
+            if isinstance(output, tuple):
+                m, sd = output
+            else:
+                m, sd = output[:, 0], output[:, 1]
             kl = self.svi_no_obs.evaluate_loss(x)
-            
+        
         mse = F.mse_loss(y.squeeze(), m.squeeze())
 
-        
-        # Permet de calculer la KL sans la likelihood
-        
-        
-        #kl = self.bnn.cached_kl_loss
         self.log('elbo/val', elbo)
         self.log("mse/val", mse)
         self.log('kl/val', kl)
@@ -201,22 +250,26 @@ class NCMAPSSBnn(pl.LightningModule):
 
 
     def training_step(self, batch, batch_idx):
-        (x, y) = batch[0], batch[1].squeeze()
+        (x, y) = batch[0], batch[1]#.squeeze()
         self.bnn_no_obs = pyro.poutine.block(self.bnn, hide=["obs"])
         self.svi_no_obs = SVI(self.bnn_no_obs, self.bnn.guide,
             self.optimizer, self.loss)
+
         # As we do not use PyTorch Optimizers, it is needed in order to Pytorch
         # Lightning to know that we are training a model, and initiate routines
         # like checkpointing etc.
         self.trainer.fit_loop.epoch_loop.batch_loop.manual_loop.\
                                     optim_step_progress.increment_ready()
         with self.fit_ctxt():
-            elbo = self.svi.step(x, y)
-            m, sd = self.bnn.predict(x)
+            elbo = self.svi.step(x, y.squeeze())
+            output = self.bnn.predict(x, num_predictions=1)
+            if isinstance(output, tuple):
+                m, sd = output
+            else:
+                m, sd = output[:, 0], output[:, 1]
             kl = self.svi_no_obs.evaluate_loss(x)
         self.trainer.fit_loop.epoch_loop.batch_loop.manual_loop.\
                                     optim_step_progress.increment_completed()
-        
         
         mse = F.mse_loss(y.squeeze(), m.squeeze()).item()
         self.log("mse/train", mse)
@@ -228,13 +281,22 @@ class NCMAPSSBnn(pl.LightningModule):
 
     def configure_optimizers(self):
         """Because we use Pyro's SVI optimizer that works differently"""
-        #self.optimizer = pyro.optim.Adam({"lr": self.lr, "weight_decay":0,
-        #    'betas' : (0.9, 0.999)})
-        self.optimizer = pyro.optim.Adagrad({"lr": self.lr})
+        if self.opt_name == "radam":
+            self.optimizer = pyro.optim.RAdam({"lr": self.lr})
+        elif self.opt_name == "sgd":
+            self.optimizer = pyro.optim.SGD({"lr": self.lr})
+        elif self.opt_name == "adagrad": 
+            self.optimizer = pyro.optim.Adagrad({"lr": self.lr})
+        elif self.opt_name == "adam":
+            self.optimizer = pyro.optim.Adam({"lr": self.lr, "betas": (0.95, 0.999)})
+        elif self.opt_name == "nadam":
+            self.optimizer = pyro.optim.NAdam({"lr": self.lr})
+        else:
+            raise ValueError("Unknown optimizer")
         return None
 
 
-    def on_save_check10000point(self, checkpoint):
+    def on_save_checkpoint(self, checkpoint):
         """Saving Pyro's param_store for the bnn's parameters"""
         checkpoint["param_store"] = pyro.get_param_store().get_state()
         
@@ -252,7 +314,7 @@ class NCMAPSSBnn(pl.LightningModule):
         parser.add_argument("--net", type=str, default="linear")
         return parent_parser
 
-
+"""
 class BnnClassifier(pl.LightningModule):
     def __init__(
         self,
@@ -451,7 +513,7 @@ class BnnClassifier(pl.LightningModule):
 
 
     def configure_optimizers(self):
-        """Because we use Pyro's SVI optimizer that works differently"""
+        # Because we use Pyro's SVI optimizer that works differently
         #self.optimizer = pyro.optim.Adam({"lr": self.lr, "weight_decay":0,
         #    'betas' : (0.9, 0.999)})
         self.optimizer = pyro.optim.Adagrad({"lr": self.lr})
@@ -459,7 +521,7 @@ class BnnClassifier(pl.LightningModule):
 
 
     def on_save_checkpoint(self, checkpoint):
-        """Saving Pyro's param_store for the bnn's parameters"""
+        # Saving Pyro's param_store for the bnn's parameters 
         checkpoint["param_store"] = pyro.get_param_store().get_state()
         
 
@@ -471,7 +533,8 @@ class BnnClassifier(pl.LightningModule):
 
     @staticmethod
     def add_model_specific_args(parent_parser):
-        """To initialize from checkpoint, without giving init args """
+        # To initialize from checkpoint, without giving init args 
         parser = parent_parser.add_argument_group("NCMAPSSModelBnn")
         parser.add_argument("--net", type=str, default="linear")
         return parent_parser
+"""

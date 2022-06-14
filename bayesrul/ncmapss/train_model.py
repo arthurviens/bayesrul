@@ -64,8 +64,8 @@ def complete_training_testing_tyxe(args, hyperparams=None, GPU = 1):
             'bias' : True,
             'prior_loc' : 0,
             'prior_scale' : 0.5,
-            'likelihood_scale' : 10,
-            'q_scale' : .001,
+            'likelihood_scale' : 0.001,
+            'q_scale' : .01,
             'mode' : 'vi',
             'fit_context' : 'lrt',
             'num_particles' : 1,
@@ -87,12 +87,12 @@ def complete_training_testing_tyxe(args, hyperparams=None, GPU = 1):
         default_hp_metric=False,
     )
 
-    monitor = f"mse/val"
+    #monitor = f"mse/val"
     #earlystopping_callback = EarlyStopping(monitor=monitor, patience=50)
     trainer = pl.Trainer(
         default_root_dir=base_log_dir,
         gpus=[GPU], 
-        max_epochs=150,
+        max_epochs=100,
         log_every_n_steps=2,
         logger=logger,
         #callbacks=[earlystopping_callback],

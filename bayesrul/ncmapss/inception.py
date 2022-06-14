@@ -3,6 +3,7 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchinfo import summary
 
 
@@ -114,16 +115,17 @@ class InceptionModel(nn.Module):
 
         self.layers = nn.Sequential(
             InceptionModule(18, 27, 27, 27, 27, activation = act, bias = bias),
-            InceptionModuleReducDim(108, 32, 64, 32, 64, 32, 32, activation = act, bias = bias),
+            InceptionModuleReducDim(108, 8, 64, 8, 64, 8, 32, activation = act, bias = bias),
+            InceptionModuleReducDim(56, 4, 16, 4, 16, 4, 8, activation = act, bias = bias),
             nn.Flatten(),
-            nn.Linear(3840, 128),
+            nn.Linear(600, 64),
             act(), 
         )
-        self.last = nn.Linear(128, self.out_size)
+        self.last = nn.Linear(64, self.out_size)
         
     
     def forward(self, x):
-        return self.last(self.layers(x.transpose(2, 1)))
+        return F.softplus(self.last(self.layers(x.transpose(2, 1))))
 
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)

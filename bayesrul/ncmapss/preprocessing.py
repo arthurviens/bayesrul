@@ -86,21 +86,31 @@ def generate_parquet(args) -> None:
             validation=args.validation,
         )
 
+        if args.moving_avg:
+            saved_cols = train[['unit', 'cycle', 'Fc', 'rul']]
+            train = train.drop(columns=['Fc', 'rul']).groupby(['unit', 'cycle']).transform(lambda x: x.rolling(10, 1).mean())
+            train = pd.concat([train, saved_cols], axis=1)
+            saved_cols = test[['unit', 'cycle', 'Fc', 'rul']]
+            test = test.drop(columns=['Fc', 'rul']).groupby(['unit', 'cycle']).transform(lambda x: x.rolling(10, 1).mean())
+            test = pd.concat([test, saved_cols], axis=1)
+            saved_cols = val[['unit', 'cycle', 'Fc', 'rul']]
+            val = val.drop(columns=['Fc', 'rul']).groupby(['unit', 'cycle']).transform(lambda x: x.rolling(10, 1).mean())
+            val = pd.concat([val, saved_cols], axis=1)
+            
+        match = re.search(r'DS[0-9]{2}', filename) # Extract DS0?
         if i < 1: 
             df_train, df_val, df_test = train, test, val
-            if len(args.files) > 1:
-                match = re.search(r'DS[0-9]{2}', filename) # Extract DS0?
-                if match:
-                    subset = [match[0]]
-                else:
-                    raise ValueError("Wrong file name {}: doesn't contain DS__"\
-                        .format(filename))
+            
+            if match:
+                subset = [match[0]]
+            else:
+                raise ValueError("Wrong file name {}: doesn't contain DS__"\
+                    .format(filename))
         else: # If more than one file, concatenate the dataframes
             df_train = pd.concat([df_train, train])
             df_test = pd.concat([df_test, test])
             df_val = pd.concat([df_test, val])
             
-            match = re.search(r'DS[0-9]{2}', filename)
             if match:
                 subset.append(match[0])
             else:
@@ -327,6 +337,7 @@ def extract_validation(
         warnings.warn("'A' auxiliary variables subset was not selected."
             " RUL label will not be transformed to piece-wise linear because "
             " health state (hs) belongs to the auxiliary subset. ")
+
 
     # Percentage of datapoints across all units (engines)
     unit_repartition = df_train.groupby('unit')['rul'].count() \
