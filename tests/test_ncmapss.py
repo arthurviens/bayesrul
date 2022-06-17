@@ -3,7 +3,6 @@ import pytest
 import pandas as pd
 import numpy as np
 
-from bayesrul.ncmapss.preprocessing import normalize_ncmapss
 from bayesrul.ncmapss.preprocessing import choose_units_for_validation
 from bayesrul.ncmapss.preprocessing import linear_piece_wise_RUL
 from bayesrul.ncmapss.preprocessing import process_files
@@ -23,42 +22,6 @@ args = SimpleNamespace(
     win_step=10,    # Window step
     bits = 32,      # Size of numbers in memory
 )
-
-
-def test_normalize_ncmapss():
-    df = pd.DataFrame(
-        [[1, 1, -2, 0], [2, -1, -1, 1], [3, 0, 1, 0.5]], 
-        columns=["rul", "sensor1", "sensor2", "setting1"]
-    )
-
-    df_standard_calc = df.copy()
-    _ = normalize_ncmapss(df_standard_calc, arg='standard')
-
-    df_standard_true = pd.DataFrame(
-        [[1, 1.224745, -1.069045, -1.224745], [2, -1.224745, -0.267261,
-            1.224745], [3, 0, 1.336306, 0]], 
-        columns=["rul", "sensor1", "sensor2", "setting1"]
-    )
-
-    df_minmax_calc = df.copy()
-    scaler = normalize_ncmapss(df_minmax_calc, arg='min-max')
-
-    df_minmax_true = pd.DataFrame(
-        [[1, 1.0, 0, 0], [2, 0, 0.333333,
-            1.0], [3, 0.5, 1.0, 0.5]], 
-        columns=["rul", "sensor1", "sensor2", "setting1"]
-    )
-
-    _ = normalize_ncmapss(df, scaler=scaler)
-
-    assert np.linalg.norm(df_standard_calc - df_standard_true) <= 1e-5
-    assert np.linalg.norm(df_minmax_calc - df_minmax_true) <= 1e-5
-    assert np.linalg.norm(df - df_minmax_true) <= 1e-5
-
-    with pytest.raises(ValueError):
-        normalize_ncmapss(df, arg="itshouldfail")
-    with pytest.raises(ValueError):
-        normalize_ncmapss(df)
 
 
 def test_choose_units_for_validation():
@@ -142,11 +105,10 @@ def test_process_dataframe():
         assert line.unit_id == 2.0
         assert line.win_id == 0
         assert len(line.settings) == 0
-        assert np.linalg.norm(line.data) - 67.347903 <= 1e-7
+        assert np.linalg.norm(line.data) - 70.64600128155931 <= 1e-5
         assert line.rul == 53.0
         
         break
-
 
 
 def test_process_files():
@@ -170,6 +132,6 @@ def test_process_files():
 
 
     assert np.linalg.norm(results.loc[0].values
-        - np.array([2, 2.0, 0, 67.347903, 53.0])) <= 1e-7
+        - np.array([2, 2.0, 0, 70.64600128155931, 53.0])) <= 1e-5
     assert np.linalg.norm(results.loc[results.shape[0] - 1].values
-        - np.array([2, 20.0, 6, 297.4568, 0])) <= 1e-7
+        - np.array([2, 20.0, 6, 297.820554, 0])) <= 1e-5
