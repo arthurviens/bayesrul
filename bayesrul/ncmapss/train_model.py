@@ -4,9 +4,9 @@ from pytorch_lightning.callbacks import EarlyStopping
 from torchinfo import summary
 
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
-from bayesrul.ncmapss.frequentist_models import NCMAPSSModel, NCMAPSSPretrain
-from bayesrul.ncmapss.frequentist_models import get_checkpoint, TBLogger
-from bayesrul.ncmapss.bayesian_models import NCMAPSSBnn
+from bayesrul.ncmapss.frequentist import NCMAPSSModel, NCMAPSSPretrain
+from bayesrul.ncmapss.frequentist import get_checkpoint, TBLogger
+from bayesrul.ncmapss.bayesian import NCMAPSS_VIBnn
 from bayesrul.utils.plotting import PredLogger
 
 import torch
@@ -16,7 +16,7 @@ import argparse
 
 def complete_training_testing_freq(args):
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-    dnn = NCMAPSSModel(data.win_length, data.n_features, args.archi)
+    dnn = NCMAPSSModel(data.win_length, data.n_features, archi = args.archi)
 
     base_log_dir = Path(args.out_path, "frequentist", args.model_name)
 
@@ -58,21 +58,26 @@ def complete_training_testing_freq(args):
 
 
 
-def complete_training_testing_tyxe(args, hyperparams=None):
+def complete_training_testing_tyxe(args, hyperparams=None, GPU = 1):
     if hyperparams is None:
         hyperparams = {
-            'prior_loc' : 0.,
-            'prior_scale' : 0.1,
-            'likelihood_scale' : 0.1,
-            'q_scale' : 0.1,
+            'bias' : True,
+            'prior_loc' : 0,
+            'prior_scale' : 0.5,
+            'likelihood_scale' : 0.001,
+            'q_scale' : 0.01,
             'mode' : 'vi',
-            'fit_context' : 'flipout',
-            'lr' : 1e-3,
+            'fit_context' : 'lrt',
+            'num_particles' : 1,
+            'optimizer': 'adam',
+            'lr' : 1e-4,
             'last_layer': args.last_layer,
             'pretrain_file' : None,
         }
 
+    print(args)
     print(hyperparams)
+    if args.guide == "radial": hyperparams["fit_context"] = 'null'
 
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
     base_log_dir = Path(args.out_path, "bayesian", args.model_name)
@@ -82,17 +87,15 @@ def complete_training_testing_tyxe(args, hyperparams=None):
         default_hp_metric=False,
     )
 
-    monitor = f"mse/val"
-    earlystopping_callback = EarlyStopping(monitor=monitor, patience=50)
+    #monitor = f"mse/val"
+    #earlystopping_callback = EarlyStopping(monitor=monitor, patience=50)
     trainer = pl.Trainer(
         default_root_dir=base_log_dir,
-        gpus=[0], #
-        max_epochs=1500,
+        gpus=[GPU], 
+        max_epochs=100,
         log_every_n_steps=2,
         logger=logger,
-        callbacks=[
-            earlystopping_callback,
-        ],
+        #callbacks=[earlystopping_callback],
     )
 
     checkpoint_file = get_checkpoint(base_log_dir, version=None)
@@ -101,8 +104,8 @@ def complete_training_testing_tyxe(args, hyperparams=None):
 
     if args.pretrain > 0 and (not checkpoint_file):
         pre_net = NCMAPSSPretrain(data.win_length, data.n_features,
-            archi = args.archi)
-        pre_trainer = pl.Trainer(gpus=[0], max_epochs=args.pretrain, logger=False,
+            archi = args.archi, bias=hyperparams['bias'])
+        pre_trainer = pl.Trainer(gpus=[GPU], max_epochs=args.pretrain, logger=False,
             checkpoint_callback=False)
 
         pretrain_dir = Path(base_log_dir, "lightning_logs",
@@ -115,27 +118,24 @@ def complete_training_testing_tyxe(args, hyperparams=None):
         torch.save(pre_net.net.state_dict(), hyperparams['pretrain_file'])
         
     if checkpoint_file:
-        dnn = NCMAPSSBnn.load_from_checkpoint(checkpoint_file,
-            map_location=torch.device("cuda:0"))
+        dnn = NCMAPSS_VIBnn.load_from_checkpoint(checkpoint_file,
+            map_location=torch.device(f"cuda:{GPU}"))
     else:
-        dnn = NCMAPSSBnn(data.win_length, data.n_features, data.train_size,
-            archi = args.archi, **hyperparams)
+        dnn = NCMAPSS_VIBnn(data.win_length, data.n_features, data.train_size,
+            archi = args.archi, device=torch.device(f"cuda:{GPU}"), 
+            guide_base = args.guide, **hyperparams)
 
 
 
     trainer.fit(dnn, data)
 
-    data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-    dnn = NCMAPSSBnn.load_from_checkpoint(checkpoint_file, 
-            map_location=torch.device("cuda:0"))
-
-    trainer = pl.Trainer(
-        gpus=[0], 
+    tester = pl.Trainer(
+        gpus=[GPU], 
         log_every_n_steps=10, 
         logger=logger, 
-        max_epochs=-1
-        ) # Silence warning
-    trainer.test(dnn, data, verbose=False)
+        max_epochs=-1 # Silence warning
+        ) 
+    tester.test(dnn, data, verbose=False)
 
     predLog = PredLogger(base_log_dir)
     predLog.save(dnn.test_preds)
@@ -159,12 +159,13 @@ if __name__ == "__main__":
                     type=str,
                     default='dnn',
                     metavar='NAME',
-                    help='Name of this specific run. (default: dnn)')
+                    help='Name of this specific run. (default: dnn)',
+                    required=True)
     parser.add_argument('--archi',
                     type=str,
                     default='linear',
                     metavar='ARCHI',
-                    help='Which model to run. (default: linear')
+                    help='Which model to run. (default: linear)')
     parser.add_argument('--lr',
                         type=float,
                         default=1e-4,
@@ -183,6 +184,11 @@ if __name__ == "__main__":
                         action='store_true',
                         default=False,
                         help='Having only the last layer as Bayesian (default: False)')
+    parser.add_argument('--guide',
+                    type=str,
+                    default='normal',
+                    metavar='GUIDE',
+                    help='Normal or Radial Autoguide. (default: normal)')
  
 
     args = parser.parse_args()

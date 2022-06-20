@@ -65,7 +65,14 @@ def generate_parquet(args) -> None:
     -------
     None
     """
+    if args.bits == 32:
+        typ = np.float32
+    else:
+        typ = np.float64
 
+    columns, mean, std = compute_scalers(args, typ)
+
+    tr = []; te = []; vl = []
     for i, filename in enumerate(args.files):
         logging.info("**** %s ****" % filename)
         logging.info("normalization = " + args.normalization)
@@ -74,10 +81,6 @@ def generate_parquet(args) -> None:
         filepath = os.path.join(args.out_path, filename)
 
         print(f"Extracting dataframes of {filename}...")
-        if args.bits == 32:
-            typ = np.float32
-        else:
-            typ = np.float64
 
         train, val, test = extract_validation(
             filepath=filepath,
@@ -85,42 +88,33 @@ def generate_parquet(args) -> None:
             vars=args.subdata,
             validation=args.validation,
         )
-
-        if i < 1: 
-            df_train, df_val, df_test = train, test, val
-            if len(args.files) > 1:
-                match = re.search(r'DS[0-9]{2}', filename) # Extract DS0?
-                if match:
-                    subset = [match[0]]
-                else:
-                    raise ValueError("Wrong file name {}: doesn't contain DS__"\
-                        .format(filename))
-        else: # If more than one file, concatenate the dataframes
-            df_train = pd.concat([df_train, train])
-            df_test = pd.concat([df_test, test])
-            df_val = pd.concat([df_test, val])
             
-            match = re.search(r'DS[0-9]{2}', filename)
-            if match:
-                subset.append(match[0])
-            else:
-                raise ValueError("Wrong file name {} : does not contain DS__"\
-                    .format(filename))
+        match = re.search(r'DS[0-9]{2}', filename) # Extract DS0?
+        
+        filename = match[0]
 
-    filename = "_".join(subset) # Create a single parquet name DS0?_DS0?_...
+        if args.moving_avg:
+            saved_cols = train[['unit', 'cycle', 'Fc', 'rul']]
+            train = train.drop(columns=['Fc', 'rul']).groupby(['unit', 'cycle']).transform(lambda x: x.rolling(10, 1).mean())
+            train = pd.concat([train, saved_cols], axis=1)
+            saved_cols = test[['unit', 'cycle', 'Fc', 'rul']]
+            test = test.drop(columns=['Fc', 'rul']).groupby(['unit', 'cycle']).transform(lambda x: x.rolling(10, 1).mean())
+            test = pd.concat([test, saved_cols], axis=1)
+            saved_cols = val[['unit', 'cycle', 'Fc', 'rul']]
+            val = val.drop(columns=['Fc', 'rul']).groupby(['unit', 'cycle']).transform(lambda x: x.rolling(10, 1).mean())
+            val = pd.concat([val, saved_cols], axis=1)
 
-    # Normalization
-    scaler = normalize_ncmapss(df_train, arg=args.normalization)
-    _ = normalize_ncmapss(df_val, scaler=scaler)
-    _ = normalize_ncmapss(df_test, scaler=scaler)
+        train[columns] -= mean; train[columns] /= std
+        val[columns] -= mean; val[columns] /= std
+        test[columns] -= mean; test[columns] /= std
 
-    print("Generating parquet files...")
-    path = Path(args.out_path, "parquet")
-    path.mkdir(exist_ok=True)
-    for df, prefix in zip([df_train, df_val, df_test], ["train", "val", "test"]):
-        if isinstance(df, pd.DataFrame):
-            df.to_parquet(f"{path}/{prefix}_{filename}.parquet", engine="pyarrow")
-
+        
+        print(f"Generating parquet file {filename}")
+        path = Path(args.out_path, "parquet")
+        path.mkdir(exist_ok=True)
+        for df, prefix in zip([train, val, test], ["train", "val", "test"]):
+            if isinstance(df, pd.DataFrame):
+                df.to_parquet(f"{path}/{prefix}_{filename}.parquet", engine="pyarrow")
 
 
 def generate_unittest_subsample(args, vars=['X_s', 'A']) -> None:
@@ -136,6 +130,7 @@ def generate_unittest_subsample(args, vars=['X_s', 'A']) -> None:
     -------
     None
     """
+
     filename = args.files[0]
     
     filepath = os.path.join(args.out_path, filename)
@@ -147,9 +142,12 @@ def generate_unittest_subsample(args, vars=['X_s', 'A']) -> None:
     df_train = linear_piece_wise_RUL(df_train.copy(), drop_hs=False)
     df_test = linear_piece_wise_RUL(df_test.copy(), drop_hs=False)
 
+
+    nosearchfor = ["unit", "cycle", "Fc", "hs", "rul"]
+    columns = df_train.columns[~(df_train.columns.str.contains('|'.join(nosearchfor)))]
     # Normalization
-    scaler = normalize_ncmapss(df_train, arg=args.normalization)
-    _ = normalize_ncmapss(df_test, scaler=scaler)
+    df_train[columns] = (df_train[columns] - df_train[columns].mean()) / df_train[columns].std()
+    df_test[columns] = (df_test[columns] - df_test[columns].mean()) / df_test[columns].std()
 
     path = Path(args.test_path, "parquet/")
     path.mkdir(exist_ok=True)
@@ -159,7 +157,7 @@ def generate_unittest_subsample(args, vars=['X_s', 'A']) -> None:
 
 
 
-def normalize_ncmapss(df: pd.DataFrame, arg="", scaler=None) -> Any:
+def compute_scalers(args, typ, arg="") -> Any:
     """ Normalizes a DataFrame IN PLACE. Provide arg or already fitted scaler
 
     Parameters
@@ -168,13 +166,10 @@ def normalize_ncmapss(df: pd.DataFrame, arg="", scaler=None) -> Any:
         DataFrame to normalize.
     arg : str, optional
         Which normalizer to use. Either 'minmax' or 'standard'
-    scaler: sklearn.preprocessing scaler
-        Already fitted scaler to use
 
     Returns
     -------
-    scaler: sklearn.preprocessing scaler
-        Fitted scaler for re-use.
+    
 
     Raises
     ------
@@ -185,29 +180,47 @@ def normalize_ncmapss(df: pd.DataFrame, arg="", scaler=None) -> Any:
         When arg is not in ['', 'minmax', 'standard']
     """
 
-    assert isinstance(df, pd.DataFrame), f"{type(df)} is not a DataFrame"
+    summ = None # train, val, test
+    std = None
+    total_size = 0
     nosearchfor = ["unit", "cycle", "Fc", "hs", "rul"]
-    columns = df.columns[~(df.columns.str.contains('|'.join(nosearchfor)))] 
+
+    print(f"Compute scaling parameters for {len(args.files)} files. Can be long")
+    for i, filename in enumerate(tqdm(args.files)):
+        filepath = os.path.join(args.out_path, filename)
+        train, val, test = extract_validation(
+            filepath=filepath,
+            typ=typ,
+            vars=args.subdata,
+            validation=args.validation,
+        )
+
+        if args.moving_avg:
+            saved_cols = train[['unit', 'cycle', 'Fc', 'rul']]
+            train = train.drop(columns=['Fc', 'rul']).groupby(['unit', 'cycle']).transform(lambda x: x.rolling(10, 1).mean())
+            train = pd.concat([train, saved_cols], axis=1)
+            saved_cols = test[['unit', 'cycle', 'Fc', 'rul']]
+            test = test.drop(columns=['Fc', 'rul']).groupby(['unit', 'cycle']).transform(lambda x: x.rolling(10, 1).mean())
+            test = pd.concat([test, saved_cols], axis=1)
+            saved_cols = val[['unit', 'cycle', 'Fc', 'rul']]
+            val = val.drop(columns=['Fc', 'rul']).groupby(['unit', 'cycle']).transform(lambda x: x.rolling(10, 1).mean())
+            val = pd.concat([val, saved_cols], axis=1)
     
-    if scaler is None:
-        if (arg is None) or (arg == ""):
-            raise ValueError("No scaler or arg provided in normalize")
-        elif (arg == 'min-max') or (arg == 'minmax'):
-            scaler = MinMaxScaler()
-            df[columns] = scaler.fit_transform(df[columns])
-        elif arg == 'standard':
-            scaler = StandardScaler()
-            df[columns] = scaler.fit_transform(df[columns])
-        else:
-            raise ValueError("Arg must be in ['', 'minmax', 'standard']")
+        columns = val.columns[~(val.columns.str.contains('|'.join(nosearchfor)))]
 
-    else:
-        if arg != "":
-            warnings.warn("Scaler provided but 'arg' parameter not empty : arg will be ignored")
-        else:
-            df[columns] = scaler.transform(df[columns])
+        total_size += len(train) + len(val) + len(test)
+        for i, df in enumerate([train, val, test]):
+            if summ is None:
+                summ = df[columns].sum(axis=0)
+                std = df[columns].std(axis=0) * len(df)
+            else:
+                summ += df[columns].sum(axis=0)
+                std += df[columns].std(axis=0) * len(df)
 
-    return scaler
+    mean = summ / total_size
+    std = std / total_size
+
+    return columns, mean, std
 
 
 def choose_units_for_validation(unit_repartition, validation) -> List[int]:
@@ -328,6 +341,7 @@ def extract_validation(
             " RUL label will not be transformed to piece-wise linear because "
             " health state (hs) belongs to the auxiliary subset. ")
 
+
     # Percentage of datapoints across all units (engines)
     unit_repartition = df_train.groupby('unit')['rul'].count() \
         / df_train.groupby('unit')['rul'].count().sum()
@@ -435,8 +449,8 @@ def generate_lmdb(args, datasets=["train", "val", "test"]) -> None:
         warnings.warn(f"{lmdb_dir} is not empty. Generation will not overwrite"
             " the previously generated .lmdb files. It will append data.")
     for ds in datasets:
-        print(f"Generating {ds} lmdb ...")
         filelist = list(Path(f"{args.out_path}/parquet").glob(f"{ds}*.parquet"))
+        print(f"Generating {ds} lmdb with {[x.as_posix() for x in filelist]} files...")
         if filelist is not None:
             feed_lmdb(Path(f"{lmdb_dir}/{ds}.lmdb"), filelist, args)
 
