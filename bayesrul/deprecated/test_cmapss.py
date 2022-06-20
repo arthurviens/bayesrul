@@ -3,7 +3,7 @@ import pytest
 import pandas as pd
 import numpy as np
 
-from bayesrul.cmapss.preprocessing import normalize_cmapss
+from bayesrul.deprecated.cmapss.preprocessing import normalize_cmapss
 
 
 def test_normalize_cmapss():

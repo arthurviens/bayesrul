@@ -449,8 +449,8 @@ def generate_lmdb(args, datasets=["train", "val", "test"]) -> None:
         warnings.warn(f"{lmdb_dir} is not empty. Generation will not overwrite"
             " the previously generated .lmdb files. It will append data.")
     for ds in datasets:
-        print(f"Generating {ds} lmdb ...")
         filelist = list(Path(f"{args.out_path}/parquet").glob(f"{ds}*.parquet"))
+        print(f"Generating {ds} lmdb with {[x.as_posix() for x in filelist]} files...")
         if filelist is not None:
             feed_lmdb(Path(f"{lmdb_dir}/{ds}.lmdb"), filelist, args)
 
