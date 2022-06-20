@@ -4,9 +4,9 @@ from pytorch_lightning.callbacks import EarlyStopping
 from torchinfo import summary
 
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
-from bayesrul.ncmapss.frequentist_models import NCMAPSSModel, NCMAPSSPretrain
-from bayesrul.ncmapss.frequentist_models import get_checkpoint, TBLogger
-from bayesrul.ncmapss.bayesian_models import NCMAPSSBnn
+from bayesrul.ncmapss.frequentist import NCMAPSSModel, NCMAPSSPretrain
+from bayesrul.ncmapss.frequentist import get_checkpoint, TBLogger
+from bayesrul.ncmapss.bayesian import NCMAPSS_VIBnn
 from bayesrul.utils.plotting import PredLogger
 
 import torch
@@ -65,12 +65,12 @@ def complete_training_testing_tyxe(args, hyperparams=None, GPU = 1):
             'prior_loc' : 0,
             'prior_scale' : 0.5,
             'likelihood_scale' : 0.001,
-            'q_scale' : .01,
+            'q_scale' : 0.01,
             'mode' : 'vi',
             'fit_context' : 'lrt',
             'num_particles' : 1,
             'optimizer': 'adam',
-            'lr' : 1e-3,
+            'lr' : 1e-4,
             'last_layer': args.last_layer,
             'pretrain_file' : None,
         }
@@ -118,10 +118,10 @@ def complete_training_testing_tyxe(args, hyperparams=None, GPU = 1):
         torch.save(pre_net.net.state_dict(), hyperparams['pretrain_file'])
         
     if checkpoint_file:
-        dnn = NCMAPSSBnn.load_from_checkpoint(checkpoint_file,
+        dnn = NCMAPSS_VIBnn.load_from_checkpoint(checkpoint_file,
             map_location=torch.device(f"cuda:{GPU}"))
     else:
-        dnn = NCMAPSSBnn(data.win_length, data.n_features, data.train_size,
+        dnn = NCMAPSS_VIBnn(data.win_length, data.n_features, data.train_size,
             archi = args.archi, device=torch.device(f"cuda:{GPU}"), 
             guide_base = args.guide, **hyperparams)
 

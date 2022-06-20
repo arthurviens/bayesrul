@@ -125,7 +125,7 @@ class InceptionModel(nn.Module):
         
     
     def forward(self, x):
-        return F.softplus(self.last(self.layers(x.transpose(2, 1))))
+        return 100 * F.softplus(self.last(self.layers(x.transpose(2, 1))))
 
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)
@@ -133,3 +133,7 @@ class InceptionModel(nn.Module):
     def load(self, path: str, map_location = torch.device('cuda:0')):
         state_dict = torch.load(path, map_location=map_location)
         self.load_state_dict(state_dict)
+
+if __name__ == "__main__":
+    dnn = InceptionModel()
+    print(summary(dnn, (100, 30, 18)))

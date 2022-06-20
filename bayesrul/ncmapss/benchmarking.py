@@ -1,8 +1,8 @@
 import pytorch_lightning as pl
 
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
-from bayesrul.ncmapss.bayesian_models import NCMAPSSBnn
-from bayesrul.ncmapss.frequentist_models import NCMAPSSPretrain
+from bayesrul.ncmapss.bayesian import NCMAPSS_VIBnn
+from bayesrul.ncmapss.frequentist import NCMAPSSPretrain
 from optuna.integration import PyTorchLightningPruningCallback
 from pathlib import Path
 
@@ -78,7 +78,7 @@ def objective(trial: optuna.trial.Trial) -> float:
 
 
 
-    dnn = NCMAPSSBnn(data.win_length, data.n_features, data.train_size,
+    dnn = NCMAPSS_VIBnn(data.win_length, data.n_features, data.train_size,
         archi = args.archi, activation = args.activation, **hyperparams)
     
     
@@ -125,7 +125,7 @@ if __name__ == "__main__":
         direction="minimize",
         study_name="optuna6", 
         pruner=pruner,
-        storage="sqlite:///nextgen.db",
+        storage="sqlite:///test.db",
         load_if_exists=True,
     )
     study.optimize(
