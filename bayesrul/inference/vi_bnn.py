@@ -19,6 +19,10 @@ class Dotdict(dict):
 
 
 class VI_BNN(Inference):
+    """
+    Bayesian Neural Network with Variational Inference
+    """
+
     def __init__(
         self,
         args,

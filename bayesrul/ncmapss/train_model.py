@@ -1,4 +1,3 @@
-from pathlib import Path
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
 
 from bayesrul.inference.vi_bnn import VI_BNN
