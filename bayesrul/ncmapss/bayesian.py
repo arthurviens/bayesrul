@@ -4,19 +4,19 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from bayesrul.ncmapss.frequentist import weights_init
-from bayesrul.ncmapss.models.inception import InceptionModel
-from bayesrul.ncmapss.models.linear import Linear
-from bayesrul.ncmapss.models.conv import Conv
+from bayesrul.models.inception import InceptionModel, BigCeption
+from bayesrul.models.linear import Linear
+from bayesrul.models.conv import Conv
 from tyxe.bnn import VariationalBNN
-from bayesrul.ncmapss.radial import AutoRadial
+from bayesrul.utils.radial import AutoRadial
 from torch.functional import F
 
 
 import tyxe
 import pyro
 import pyro.distributions as dist
-from pyro.infer import SVI, Trace_ELBO, TraceMeanField_ELBO, MCMC
-
+from pyro.infer import SVI, MCMC, Trace_ELBO, JitTrace_ELBO
+from pyro.infer import TraceMeanField_ELBO, JitTraceMeanField_ELBO
 
 def remove_dict_entry_startswith(dictionary, string):
     """Used to remove entries with 'bnn' in checkpoint state dict"""
@@ -57,6 +57,9 @@ class NCMAPSS_Bnn(pl.LightningModule):
                 bias=bias, typ='regression').to(device=device)
         elif archi == "inception":
             self.net = InceptionModel(activation=activation, 
+                bias=bias).to(device=device)
+        elif archi == "bigception":
+            self.net = BigCeption(activation=activation, 
                 bias=bias).to(device=device)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
@@ -129,7 +132,6 @@ class NCMAPSS_VIBnn(NCMAPSS_Bnn):
         device=torch.device('cuda:0'),
         prior_loc=0.,
         prior_scale=10,
-        prior='gaussian',
         likelihood_scale=3,
         q_scale=0.01,
         fit_context="flipout",
@@ -170,36 +172,26 @@ class NCMAPSS_VIBnn(NCMAPSS_Bnn):
             guide_base = AutoRadial
             closed_form_kl = False
             print("Using Radial Guide")
+            self.fit_ctxt = contextlib.nullcontext
         else: 
             raise ValueError("Guide unknown. Choose from 'normal', 'radial'.")
         
         self.num_particles = num_particles
         self.loss_name = "elbo"
         self.loss = (
-            TraceMeanField_ELBO(num_particles)
+            TraceMeanField_ELBO(num_particles) 
             if closed_form_kl
-            else Trace_ELBO(num_particles)
+            else Trace_ELBO(num_particles) 
         )
         #self.loss = CustomTrace_ELBO(num_particles)
         prior_kwargs = {}#{'hide_all': True}
         
-        if prior == 'gaussian':
-            self.prior = tyxe.priors.IIDPrior(
-                dist.Normal(
-                    torch.tensor(float(prior_loc), device=device), 
-                    torch.tensor(float(prior_scale), device=device),
-                ), **prior_kwargs
-            )
-        elif prior == 'laplace':
-            self.prior = tyxe.priors.IIDPrior(
-                dist.Laplace(
-                    torch.tensor(float(prior_loc), device=device), 
-                    torch.tensor(float(prior_scale), device=device),
-                ), **prior_kwargs
-            )
-            closed_form_kl = False
-        else: 
-            raise ValueError("Guide unknown. Choose from 'normal', 'radial'.")
+        self.prior = tyxe.priors.IIDPrior(
+            dist.Normal(
+                torch.tensor(float(prior_loc), device=device), 
+                torch.tensor(float(prior_scale), device=device),
+            ), **prior_kwargs
+        )
         
         self.likelihood = tyxe.likelihoods.HeteroskedasticGaussian(
             dataset_size, #scale=likelihood_scale
@@ -245,7 +237,6 @@ class NCMAPSS_VIBnn(NCMAPSS_Bnn):
             self.optimizer,
             self.loss
         )
-
 
 
     def test_step(self, batch, batch_idx):
@@ -320,6 +311,8 @@ class NCMAPSS_VIBnn(NCMAPSS_Bnn):
         self.log('kl/train', kl)
         self.log('likelihood/train', elbo - kl)
         #return {'loss' : mse}
+
+
 
 
 

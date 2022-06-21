@@ -123,7 +123,7 @@ def generate_unittest_subsample(args, vars=['X_s', 'A']) -> None:
 
     Parameters
     ----------
-    arg : SimpleNamespace
+    args : SimpleNamespace
         arguments to forward (out_path, normalization, validation...)
 
     Returns
@@ -158,18 +158,25 @@ def generate_unittest_subsample(args, vars=['X_s', 'A']) -> None:
 
 
 def compute_scalers(args, typ, arg="") -> Any:
-    """ Normalizes a DataFrame IN PLACE. Provide arg or already fitted scaler
+    """ Compute sums for mean and std to scale multiple dataframes
+        As we cannot load every file, they have to be processed one at a time
+        However, the same normalization should be applied to every file
 
     Parameters
     ----------
-    df : pd.DataFrame
-        DataFrame to normalize.
-    arg : str, optional
-        Which normalizer to use. Either 'minmax' or 'standard'
+    args : SimpleNamespace
+        arguments to forward (out_path, normalization, validation...)
+    typ : numpy type
+        What precision to have for the dataframe values (np.float64, 32...)
 
     Returns
     -------
-    
+    columns : list of str
+        which columns to scale
+    means : pd.Series
+        means of the columns to scale (names as index)
+    stds : pd.Series
+        stds of the columns to scale (names as index)
 
     Raises
     ------

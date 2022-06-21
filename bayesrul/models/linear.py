@@ -37,7 +37,7 @@ class Linear(nn.Module):
                 nn.Linear(128, 128, bias=bias),
                 nn.Dropout(p=dropout_freq),
                 act(),
-                nn.Linear(128, 64, bias=bias),
+                nn.Linear(128, 32, bias=bias),
                 nn.Dropout(p=dropout_freq),
                 act(),
             )
