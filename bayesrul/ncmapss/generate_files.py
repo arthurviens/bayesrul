@@ -9,7 +9,7 @@ if __name__ == "__main__":
         normalization = "standard",
         validation = 0.10,
         files = [
-            #"N-CMAPSS_DS01-005",
+            "N-CMAPSS_DS01-005",
             "N-CMAPSS_DS02-006", 
             "N-CMAPSS_DS03-012", 
             "N-CMAPSS_DS04", 

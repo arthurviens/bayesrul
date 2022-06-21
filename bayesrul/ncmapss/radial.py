@@ -1,5 +1,5 @@
 ################################################################################
-## I AM NOT THE AUTHOR OF THIS CODE, I TOOK IT FROM https://github.com/silasbrack
+## I AM NOT THE AUTHOR OF THIS CODE, AUTHOR : https://github.com/silasbrack
 ## https://github.com/silasbrack/approximate-inference-for-bayesian-neural- 
 ## networks/blob/main/src/guides/radial.py 
 ## Using it for experimentation purposes
