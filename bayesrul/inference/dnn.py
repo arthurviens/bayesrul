@@ -1,3 +1,4 @@
+
 from pathlib import Path
 
 import torch
@@ -19,13 +20,17 @@ class Dotdict(dict):
 
 
 class DNN(Inference):
+    """
+    Standard frequentist neural networks
+    """
+
     def __init__(
         self,
         args,
         data: pl.LightningDataModule,
         hyperparams = None,
         GPU = 1,
-    ) -> None:
+    ) -> None:    
         self.name = f"vi_{args.model_name}_{args.archi}_{args.guide}"
         assert isinstance(GPU, int), \
             f"GPU argument should be an int, not {type(GPU)}"

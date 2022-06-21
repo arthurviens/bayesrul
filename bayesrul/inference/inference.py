@@ -5,8 +5,16 @@ from pytorch_lightning import LightningDataModule
 
 
 class Inference(ABC):
+    """ Abstract class used to simplify benchmarking.
+        Provided a LightningDataModule, initializes a model and offers methods
+        to train, test and compute uncertainties on test set.
+            data = LightningDataModule(...)
+            inference = ...
+            inference.fit(2)
+            inference.test()
+    """
     name: str = None
-    
+
     @abstractmethod
     def __init__(
         self,

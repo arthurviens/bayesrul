@@ -3,7 +3,7 @@ from functools import partial
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from bayesrul.ncmapss.frequentist import weights_init
+from bayesrul.utils.miscellaneous import weights_init
 from bayesrul.models.inception import InceptionModel, BigCeption
 from bayesrul.models.linear import Linear
 from bayesrul.models.conv import Conv
@@ -28,8 +28,6 @@ def remove_dict_entry_startswith(dictionary, string):
             dictionary = dict2
     return dictionary
 
-def inverse_softplus(t):
-    return t.expm1().log()
 
 class NCMAPSS_Bnn(pl.LightningModule):
     def __init__(
