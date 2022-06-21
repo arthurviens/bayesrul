@@ -6,9 +6,9 @@ import torch.nn as nn
 from pytorch_lightning.utilities import rank_zero_only
 from torch.functional import F
 
-from bayesrul.ncmapss.models.inception import InceptionModel
-from bayesrul.ncmapss.models.linear import Linear
-from bayesrul.ncmapss.models.conv import Conv
+from bayesrul.models.inception import InceptionModel, BigCeption
+from bayesrul.models.linear import Linear
+from bayesrul.models.conv import Conv
 
 
 def get_checkpoint(path, version=None) -> None:
@@ -59,6 +59,7 @@ class NCMAPSSModel(pl.LightningModule):
         weight_decay=1e-3,
         loss='mse',
         activation='relu',
+        **kwargs
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -165,6 +166,8 @@ class NCMAPSSPretrain(pl.LightningModule):
                 bias = bias, typ=typ)
         elif archi == "inception":
             self.net = InceptionModel(activation=activation, bias = bias)
+        elif archi == "bigception":
+            self.net = BigCeption(activation=activation, bias=bias)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 

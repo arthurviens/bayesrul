@@ -1,63 +1,10 @@
 from pathlib import Path
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks import EarlyStopping
-
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
-from bayesrul.ncmapss.frequentist import NCMAPSSModel
-from bayesrul.ncmapss.frequentist import get_checkpoint, TBLogger
-
-from bayesrul.utils.plotting import PredLogger
 
 from bayesrul.inference.vi_bnn import VI_BNN
-
+from bayesrul.inference.dnn import DNN
 
 import argparse
-
-
-def complete_training_testing_freq(args):
-    data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-    dnn = NCMAPSSModel(data.win_length, data.n_features, archi = args.archi)
-
-    base_log_dir = Path(args.out_path, "frequentist", args.model_name)
-
-    checkpoint_file = get_checkpoint(base_log_dir, version=None)
-
-    logger = TBLogger(
-        Path(base_log_dir),
-        default_hp_metric=False,
-    )
-
-
-    monitor = f"{dnn.loss}/val"
-    earlystopping_callback = EarlyStopping(monitor=monitor, patience=50)
-
-    trainer = pl.Trainer(
-        default_root_dir=base_log_dir,
-        gpus=[1],
-        max_epochs=1000,
-        log_every_n_steps=2,
-        logger=logger,
-        callbacks=[
-            earlystopping_callback,
-        ],
-    )
-    
-    trainer.fit(dnn, data, ckpt_path=checkpoint_file)
-
-
-    checkpoint_file = get_checkpoint(base_log_dir, version=None)
-
-    data = NCMAPSSDataModule(args.data_path, batch_size=1000)
-    dnn = NCMAPSSModel.load_from_checkpoint(checkpoint_file)
-    trainer = pl.Trainer(gpus=[0], log_every_n_steps=10, logger=logger, 
-                        max_epochs=-1) # Silence warning
-    
-    trainer.test(dnn, data, verbose=False)
-    predLog = PredLogger(base_log_dir)
-    predLog.save(dnn.test_preds)
-
-
-
 
 
 if __name__ == "__main__":
@@ -115,6 +62,8 @@ if __name__ == "__main__":
     if args.bayesian:
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
         module = VI_BNN(args, data)
-        module.fit(2)
+        module.fit(100)
     else:
-        complete_training_testing_freq(args)
+        data = NCMAPSSDataModule(args.data_path, batch_size=10000)
+        module = DNN(args, data)
+        module.fit(100)

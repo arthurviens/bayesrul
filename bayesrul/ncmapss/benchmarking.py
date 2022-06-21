@@ -12,7 +12,7 @@ import argparse
 import optuna
 
 debug = False
-EPOCHS = 150 if not debug else 2
+EPOCHS = 200 if not debug else 2
 device = torch.device('cuda:2')
 
 def objective(trial: optuna.trial.Trial) -> float:
@@ -20,18 +20,20 @@ def objective(trial: optuna.trial.Trial) -> float:
 
     #bias = trial.suggest_categorical("bias", [True, False])
     prior_loc = 0 #trial.suggest_float("prior_loc", -0.2, 0.2)
-    prior_scale = trial.suggest_float("prior_scale", 1e-4, 2, log=True)
-    likelihood_scale = trial.suggest_float("likelihood_scale", 1e-2, 1e2, log=True)
-    q_scale = trial.suggest_float("q_scale", 1e-4, 5e2, log=True)
+    prior_scale = trial.suggest_float("prior_scale", 1e-4, 5, log=True)
+    likelihood_scale = 0 #trial.suggest_float("likelihood_scale", 1e-2, 1e2, log=True)
+    q_scale = trial.suggest_float("q_scale", 1e-4, 10, log=True)
     fit_context = trial.suggest_categorical("fit_context", ['lrt', 'flipout']) 
     lr = trial.suggest_float("lr", 1e-4, 1, log=True)
-    num_particles = trial.suggest_categorical("num_particles", [1, 3, 5])
+    num_particles = 1# trial.suggest_categorical("num_particles", [1, 3])
     guide_base = trial.suggest_categorical("guide_base", ['normal', 'radial'])
-    args.archi = trial.suggest_categorical("args.archi", ['linear', 'conv'])
+    optimizer = trial.suggest_categorical("optimizer", ['adam', 'nadam', 'sgd', 'adagrad'])
+    args.archi = trial.suggest_categorical("args.archi", 
+            ['linear', 'conv', 'inception', 'bigception'])
     args.activation = trial.suggest_categorical("args.activation", 
         ['sigmoid', 'tanh', 'relu'])
-    args.last_layer = trial.suggest_categorical("args.last_layer", [True, False])
-    args.pretrain = trial.suggest_categorical("args.pretrain", [0, 100])
+    args.last_layer = False #trial.suggest_categorical("args.last_layer", [True, False])
+    args.pretrain = trial.suggest_categorical("args.pretrain", [0, 75])
 
 
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
@@ -39,7 +41,7 @@ def objective(trial: optuna.trial.Trial) -> float:
     trainer = pl.Trainer(
         gpus=[2],
         logger=True,
-        checkpoint_callback=False,
+        enable_checkpointing=False,
         max_epochs=EPOCHS,
         callbacks=[PyTorchLightningPruningCallback(trial, monitor=monitor)],
     )
@@ -54,6 +56,7 @@ def objective(trial: optuna.trial.Trial) -> float:
         'fit_context' : fit_context,
         'lr' : lr,
         'guide_base' : guide_base,
+        'optimizer' : optimizer,
         'num_particles' : num_particles,
         'pretrain_file' : None,
         'last_layer': args.last_layer,
@@ -66,7 +69,7 @@ def objective(trial: optuna.trial.Trial) -> float:
         pre_net = NCMAPSSPretrain(data.win_length, data.n_features,
             archi = args.archi)
         pre_trainer = pl.Trainer(gpus=[2], max_epochs=args.pretrain, logger=False,
-            checkpoint_callback=False)
+            enable_checkpointing=False)
 
         pretrain_dir = Path("lightning_logs",
             f'version_{trainer.logger.version}')
@@ -123,14 +126,14 @@ if __name__ == "__main__":
     )
     study = optuna.create_study(
         direction="minimize",
-        study_name="optuna6", 
+        study_name="optuna_1", 
         pruner=pruner,
-        storage="sqlite:///test.db",
+        storage="sqlite:///studies.db",
         load_if_exists=True,
     )
     study.optimize(
         objective, 
-        n_trials=300, 
+        n_trials=500, 
         timeout=None,
         catch=(ValueError,),
     )

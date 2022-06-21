@@ -44,7 +44,7 @@ class InceptionModule(nn.Module):
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)
 
-    def load(self, path: str, map_location = torch.device('cuda:0')):
+    def load(self, path: str, map_location = torch.device('cpu')):
         state_dict = torch.load(path, map_location=map_location)
         self.load_state_dict(state_dict)
 
@@ -92,7 +92,7 @@ class InceptionModuleReducDim(nn.Module):
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)
 
-    def load(self, path: str, map_location = torch.device('cuda:0')):
+    def load(self, path: str, map_location = torch.device('cpu')):
         state_dict = torch.load(path, map_location=map_location)
         self.load_state_dict(state_dict)
 
@@ -130,10 +130,49 @@ class InceptionModel(nn.Module):
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)
 
-    def load(self, path: str, map_location = torch.device('cuda:0')):
+    def load(self, path: str, map_location = torch.device('cpu')):
+        state_dict = torch.load(path, map_location=map_location)
+        self.load_state_dict(state_dict)
+
+
+class BigCeption(nn.Module):
+    def __init__(self, n_features, activation='relu', bias='True'):
+        super().__init__()
+        assert n_features == 18, \
+            "TODO, Generalize Inception model for other than 18 features"
+
+        if activation == 'relu':
+            act = nn.ReLU
+        elif activation == 'sigmoid':
+            act = nn.Sigmoid
+        elif activation == 'tanh':
+            act = nn.Tanh
+        elif activation == 'leaky_relu':
+            act = nn.LeakyReLU
+        else:
+            raise ValueError("Unknown activation")
+
+        self.out_size = 2 
+
+        self.layers = nn.Sequential(
+            InceptionModule(n_features, 27, 27, 27, 27, activation = act, bias = bias),
+            InceptionModuleReducDim(108, 16, 64, 16, 64, 16, 32, activation = act, bias = bias),
+            nn.Flatten(),
+            nn.Linear(2400, 64),
+            act(), 
+        )
+        self.last = nn.Linear(64, self.out_size)
+    
+    def forward(self, x):
+        return 100 * F.softplus(self.last(self.layers(x.transpose(2, 1))))
+
+    def save(self, path: str) -> None:
+        torch.save(self.state_dict(), path)
+
+    def load(self, path: str, map_location = torch.device('cpu')):
         state_dict = torch.load(path, map_location=map_location)
         self.load_state_dict(state_dict)
 
 if __name__ == "__main__":
-    dnn = InceptionModel()
+    dnn = BigCeption()
     print(summary(dnn, (100, 30, 18)))

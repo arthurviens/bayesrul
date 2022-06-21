@@ -5,7 +5,6 @@ import torch
 import pytorch_lightning as pl
 
 from bayesrul.inference.inference import Inference
-from bayesrul.ncmapss.dataset import NCMAPSSDataModule
 from bayesrul.ncmapss.frequentist import NCMAPSSPretrain
 from bayesrul.ncmapss.frequentist import get_checkpoint, TBLogger
 from bayesrul.utils.plotting import PredLogger
