@@ -29,7 +29,7 @@ def remove_dict_entry_startswith(dictionary, string):
     return dictionary
 
 
-class NCMAPSS_Bnn(pl.LightningModule):
+class BnnWrapper(pl.LightningModule):
     def __init__(
         self,
         win_length,
@@ -116,7 +116,7 @@ class NCMAPSS_Bnn(pl.LightningModule):
 
 
 
-class NCMAPSS_VIBnn(NCMAPSS_Bnn):
+class VIBnnWrapper(BnnWrapper):
     def __init__(
         self,
         win_length,
@@ -314,7 +314,7 @@ class NCMAPSS_VIBnn(NCMAPSS_Bnn):
 
 
 
-class NCMAPSS_MCMCBnn(NCMAPSS_Bnn):
+class MCMCBnnWrapper(BnnWrapper):
     def __init__(
         self,
         win_length,

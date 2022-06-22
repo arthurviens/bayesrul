@@ -1,5 +1,3 @@
-import os, glob
-
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
@@ -11,26 +9,10 @@ from bayesrul.models.conv import Conv
 from bayesrul.utils.miscellaneous import weights_init
 
 
-def get_checkpoint(path, version=None) -> None:
-    try:
-        path = os.path.join(os.getcwd(), path, 'lightning_logs')
-        ls = sorted(os.listdir(path), reverse = True)
-        d = os.path.join(path, ls[-1], "checkpoints")
-        if os.path.isdir(d):
-            checkpoint_file = sorted(
-                glob.glob(os.path.join(d, "*.ckpt")), 
-                key=os.path.getmtime, 
-                reverse=True
-            )
-            return str(checkpoint_file[0]) if checkpoint_file else None
-        return None
-    except Exception as e:
-        if e == FileNotFoundError:
-            print("Could not find any checkpoint in {}".format(d))
-        return None
 
 
-class NCMAPSSModel(pl.LightningModule):
+
+class DnnWrapper(pl.LightningModule):
     def __init__(
         self,
         win_length,
@@ -126,7 +108,7 @@ class NCMAPSSModel(pl.LightningModule):
         return parent_parser
 
         
-class NCMAPSSPretrain(pl.LightningModule):
+class DnnPretrainWrapper(pl.LightningModule):
     def __init__(
         self,
         win_length,

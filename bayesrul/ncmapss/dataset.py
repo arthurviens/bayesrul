@@ -61,7 +61,7 @@ class NCMAPSSDataModule(pl.LightningDataModule):
             self.datasets["train"],
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=3,
+            num_workers=4,
             pin_memory=True,
         )
 
@@ -69,7 +69,7 @@ class NCMAPSSDataModule(pl.LightningDataModule):
         return DataLoader(
             self.datasets["val"],
             batch_size=self.batch_size,
-            num_workers=3,
+            num_workers=4,
             pin_memory=True,
         )
 
@@ -77,6 +77,6 @@ class NCMAPSSDataModule(pl.LightningDataModule):
         return DataLoader(
             self.datasets["test"],
             batch_size=self.batch_size,
-            num_workers=2,
+            num_workers=1,
             pin_memory=True,
         )
