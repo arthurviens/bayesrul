@@ -7,8 +7,8 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping
 
 from bayesrul.inference.inference import Inference
-from bayesrul.ncmapss.frequentist import NCMAPSSModel
-from bayesrul.ncmapss.frequentist import get_checkpoint, TBLogger
+from bayesrul.lightning_wrappers.frequentist import DnnWrapper
+from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger
 from bayesrul.utils.plotting import PredLogger
 
 
@@ -62,7 +62,7 @@ class DNN(Inference):
 
 
     def fit(self, epochs):
-        dnn = NCMAPSSModel(
+        dnn = DnnWrapper(
             self.data.win_length, 
             self.data.n_features, 
             **self.args,
@@ -90,7 +90,7 @@ class DNN(Inference):
     def test(self):
         checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
 
-        dnn = NCMAPSSModel.load_from_checkpoint(checkpoint_file)
+        dnn = DnnWrapper.load_from_checkpoint(checkpoint_file)
         tester = pl.Trainer(
             gpus=[0], 
             log_every_n_steps=10, 

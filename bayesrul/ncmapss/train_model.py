@@ -61,8 +61,8 @@ if __name__ == "__main__":
     if args.bayesian:
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
         module = VI_BNN(args, data)
-        module.fit(100)
+        module.fit(2)
     else:
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
         module = DNN(args, data)
-        module.fit(100)
+        module.fit(2)

@@ -1,8 +1,8 @@
 import pytorch_lightning as pl
 
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
-from bayesrul.ncmapss.bayesian import NCMAPSS_VIBnn
-from bayesrul.ncmapss.frequentist import NCMAPSSPretrain
+from bayesrul.lightning_wrappers.bayesian import VIBnnWrapper
+from bayesrul.lightning_wrappers.frequentist import DnnPretrainWrapper
 from optuna.integration import PyTorchLightningPruningCallback
 from pathlib import Path
 
@@ -66,7 +66,7 @@ def objective(trial: optuna.trial.Trial) -> float:
 
 
     if args.pretrain > 0:
-        pre_net = NCMAPSSPretrain(data.win_length, data.n_features,
+        pre_net = DnnPretrainWrapper(data.win_length, data.n_features,
             archi = args.archi)
         pre_trainer = pl.Trainer(gpus=[2], max_epochs=args.pretrain, logger=False,
             enable_checkpointing=False)
@@ -81,7 +81,7 @@ def objective(trial: optuna.trial.Trial) -> float:
 
 
 
-    dnn = NCMAPSS_VIBnn(data.win_length, data.n_features, data.train_size,
+    dnn = VIBnnWrapper(data.win_length, data.n_features, data.train_size,
         archi = args.archi, activation = args.activation, **hyperparams)
     
     

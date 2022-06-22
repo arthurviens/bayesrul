@@ -5,10 +5,10 @@ import torch
 import pytorch_lightning as pl
 
 from bayesrul.inference.inference import Inference
-from bayesrul.ncmapss.frequentist import NCMAPSSPretrain
-from bayesrul.ncmapss.frequentist import get_checkpoint, TBLogger
+from bayesrul.lightning_wrappers.frequentist import DnnPretrainWrapper
+from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger
 from bayesrul.utils.plotting import PredLogger
-from bayesrul.ncmapss.bayesian import NCMAPSS_VIBnn
+from bayesrul.lightning_wrappers.bayesian import VIBnnWrapper
 
 
 class Dotdict(dict):
@@ -84,7 +84,7 @@ class VI_BNN(Inference):
             raise ValueError("Can not pretrain and resume from checkpoint")
 
         if self.args.pretrain > 0 and (not checkpoint_file):
-            pre_net = NCMAPSSPretrain(self.data.win_length, self.data.n_features,
+            pre_net = DnnPretrainWrapper(self.data.win_length, self.data.n_features,
                 archi = self.args.archi, bias=self.hyperparams['bias'])
             pre_trainer = pl.Trainer(gpus=[self.GPU], max_epochs=self.args.pretrain, logger=False,
                 checkpoint_callback=False)
@@ -99,10 +99,10 @@ class VI_BNN(Inference):
             torch.save(pre_net.net.state_dict(), self.hyperparams['pretrain_file'])
             
         if checkpoint_file:
-            self.dnn = NCMAPSS_VIBnn.load_from_checkpoint(checkpoint_file,
+            self.dnn = VIBnnWrapper.load_from_checkpoint(checkpoint_file,
                 map_location=self.args.device)
         else:
-            self.dnn = NCMAPSS_VIBnn(
+            self.dnn = VIBnnWrapper(
                 self.data.win_length, 
                 self.data.n_features, 
                 self.data.train_size,
