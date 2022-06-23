@@ -65,7 +65,7 @@ class Conv(nn.Module):
 
     def forward(self, x):
         if self.typ == "regression": 
-            return 100 * F.softplus(self.last(self.layers(x.unsqueeze(1))))
+            return 1e-9 + 100 * F.softplus(self.last(self.layers(x.unsqueeze(1))))
         elif self.typ == "classification": 
             return self.softmax(self.last(self.layers(x.unsqueeze(1))))
         
@@ -135,7 +135,7 @@ class Conv2(nn.Module):
 
     def forward(self, x):
         if self.typ == "regression": 
-            return F.softplus(self.last(self.layers(x.unsqueeze(1))))
+            return 1e-9 + 100* F.softplus(self.last(self.layers(x.unsqueeze(1))))
         elif self.typ == "classification": 
             return self.softmax(self.last(self.layers(x.unsqueeze(1))))
         
