@@ -105,7 +105,7 @@ class DnnWrapper(pl.LightningModule):
     @staticmethod
     def add_model_specific_args(parent_parser):
         """To initialize from checkpoint, without giving init args """
-        parser = parent_parser.add_argument_group("NCMAPSSModel")
+        parser = parent_parser.add_argument_group("DnnWrapper")
         parser.add_argument("--net", type=str, default="linear")
         return parent_parser
 

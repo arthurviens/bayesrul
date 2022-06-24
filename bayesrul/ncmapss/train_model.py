@@ -61,7 +61,8 @@ if __name__ == "__main__":
     
 
     if args.bayesian:
-        hyp = {
+        hyp = {}
+        '''hyp = {
                 'activation': 'relu',
                 'bias' : True,
                 'prior_loc' : 0,
@@ -74,11 +75,12 @@ if __name__ == "__main__":
                 'lr' : 0.002205730851888167,
                 'last_layer': args.last_layer,
                 'pretrain_file' : None,
-            }
+            }'''
 
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
         module = VI_BNN(args, data, hyp)
-        module.fit(5)
+        module.fit(0)
+        module.epistemic_aleatoric_uncertainty()
     else:
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
         module = DNN(args, data)

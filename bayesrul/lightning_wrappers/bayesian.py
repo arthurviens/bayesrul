@@ -248,6 +248,7 @@ class VIBnnWrapper(BnnWrapper):
             if isinstance(output, tuple):
                 m, sd = output
             else:
+                output = output.squeeze()
                 m, sd = output[:, 0], output[:, 1]
         
         mse = F.mse_loss(y.squeeze(), m.squeeze())

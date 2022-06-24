@@ -9,7 +9,7 @@ from bayesrul.inference.inference import Inference
 from bayesrul.lightning_wrappers.frequentist import DnnPretrainWrapper
 from bayesrul.lightning_wrappers.bayesian import VIBnnWrapper
 from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger
-from bayesrul.utils.plotting import PredLogger
+from bayesrul.utils.plotting import PredSaver, UncertaintySaver
 
 import pyro 
 
@@ -94,24 +94,24 @@ class VI_BNN(Inference):
             pretrain_dir = Path(self.base_log_dir, "lightning_logs",
                 f'version_{self.trainer.logger.version}')
             pretrain_dir.mkdir(exist_ok=True, parents=True)
-            self.hyperparams['pretrain_file'] = Path(pretrain_dir,
+            self.args['pretrain_file'] = Path(pretrain_dir,
                 f'pretrained_{self.args.pretrain}.pt').as_posix()
             pre_trainer.fit(pre_net, self.data)
             self.base_log_dir.mkdir(exist_ok=True)
-            torch.save(pre_net.net.state_dict(), self.hyperparams['pretrain_file'])
+            torch.save(pre_net.net.state_dict(), self.args['pretrain_file'])
             
         if checkpoint_file:
-            self.dnn = VIBnnWrapper.load_from_checkpoint(checkpoint_file,
+            self.bnn = VIBnnWrapper.load_from_checkpoint(checkpoint_file,
                 map_location=self.args.device)
         else:
-            self.dnn = VIBnnWrapper(
+            self.bnn = VIBnnWrapper(
                 self.data.win_length, 
                 self.data.n_features, 
                 self.data.train_size,
                 **self.args
             )
 
-        self.trainer.fit(self.dnn, self.data)
+        self.trainer.fit(self.bnn, self.data)
 
     def test(self):
 
@@ -121,18 +121,41 @@ class VI_BNN(Inference):
             logger=self.logger, 
             max_epochs=-1 # Silence warning
             ) 
-        tester.test(self.dnn, self.data, verbose=False)
+        tester.test(self.bnn, self.data, verbose=False)
 
-        predLog = PredLogger(self.base_log_dir)
-        predLog.save(self.dnn.test_preds)
+        predLog = PredSaver(self.base_log_dir)
+        predLog.save(self.bnn.test_preds)
 
     def epistemic_aleatoric_uncertainty(self):
-        self.dnn.test_preds
+        dim = 0
+        self.bnn.test_preds
         for i, (x, y) in enumerate(tqdm(self.data.test_dataloader())):
-            print(f"i : {x.shape}")
+            
+            output = self.bnn.bnn.predict(x, num_predictions=10, aggregate=False)
+            if isinstance(output, tuple):
+                loc, scale = output
+            else:
+                output = output.squeeze()
+                loc, scale = output[:, :, 0], output[:, :, 1]
+            # Sd is the PREDICTIVE VARIANCE 
+            pred_loc = loc.mean(axis=dim)
 
+            predictive_var = (scale**2).mean(dim).add(loc.var(dim))
+            #predictive_unc = predictive_var.sqrt()
+            epistemic_var = loc.var(dim)
+            #epistemic_unc = epistemic_var.sqrt()
+            aleatoric_var = (scale**2).mean(dim)
+            #aleatoric_unc = aleatoric_var.sqrt()
 
-            break
+        sav = UncertaintySaver(self.base_log_dir)
+        sav.save({
+            'unweighted_pred_loc': pred_loc.detach().cpu().numpy(),
+            'pred_var': predictive_var.detach().cpu().numpy(),
+            'ep_var': epistemic_var.detach().cpu().numpy(),
+            'al_var': aleatoric_var.detach().cpu().numpy(),
+        })
+        
+            
 
     def num_params(self) -> int:
         ...
