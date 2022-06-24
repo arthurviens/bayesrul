@@ -3,6 +3,8 @@ from bayesrul.ncmapss.dataset import NCMAPSSDataModule
 from bayesrul.inference.vi_bnn import VI_BNN
 from bayesrul.inference.dnn import DNN
 
+from torch.profiler import profile, record_function, ProfilerActivity
+
 import argparse
 
 
@@ -59,9 +61,24 @@ if __name__ == "__main__":
     
 
     if args.bayesian:
+        hyp = {
+                'activation': 'relu',
+                'bias' : True,
+                'prior_loc' : 0,
+                'prior_scale' : 2.9384869007207115,
+                'likelihood_scale' : 0, # Useless in Heteroskedastic case
+                'q_scale' : 0.00010734634159341767,
+                'fit_context' : 'lrt',
+                'num_particles' : 1,
+                'optimizer': 'sgd',
+                'lr' : 0.002205730851888167,
+                'last_layer': args.last_layer,
+                'pretrain_file' : None,
+            }
+
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-        module = VI_BNN(args, data)
-        module.fit(2)
+        module = VI_BNN(args, data, hyp)
+        module.fit(5)
     else:
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
         module = DNN(args, data)

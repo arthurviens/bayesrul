@@ -55,6 +55,7 @@ class Linear(nn.Module):
             )
         self.last = nn.Linear(32, out_size)
         self.softmax = nn.Softmax(dim=1)
+        self.thresh = nn.Threshold(1e-9, 1e-9)
 
     def save(self, path: str) -> None:
         torch.save(self.state_dict(),path)
@@ -65,6 +66,8 @@ class Linear(nn.Module):
 
     def forward(self, x):
         if self.typ == "regression": 
-            return 1e-9 + 100 * F.softplus(self.last(self.layers(x.unsqueeze(1))))
+            x = F.softplus(self.last(self.layers(x.transpose(2, 1))))
+            x = self.thresh(x)
+            return x
         elif self.typ == "classification": 
             return self.softmax(self.last(self.layers(x.unsqueeze(1))))

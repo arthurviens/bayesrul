@@ -123,11 +123,13 @@ class InceptionModel(nn.Module):
         )
         self.last = nn.Linear(64, self.out_size)
 
-        self.last_act = nn.Softplus(beta=1, threshold=10)
+        self.thresh = nn.Threshold(1e-9, 1e-9)
         
     
     def forward(self, x):
-        return 1e-9 + 100 * self.last_act(self.last(self.layers(x.transpose(2, 1))))
+        x = F.softplus(self.last(self.layers(x.transpose(2, 1))))
+        x = self.thresh(x)
+        return x
 
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)
@@ -164,9 +166,13 @@ class BigCeption(nn.Module):
             act(), 
         )
         self.last = nn.Linear(64, self.out_size)
+        self.thresh = nn.Threshold(1e-9, 1e-9)
+        
     
     def forward(self, x):
-        return 1e-9 + 100 * F.softplus(self.last(self.layers(x.transpose(2, 1))))
+        x = F.softplus(self.last(self.layers(x.transpose(2, 1))))
+        x = self.thresh(x)
+        return x
 
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)

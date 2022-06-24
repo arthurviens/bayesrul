@@ -12,6 +12,8 @@ from bayesrul.utils.radial import AutoRadial
 from torch.functional import F
 
 
+from torch.autograd import detect_anomaly
+
 import tyxe
 import pyro
 import pyro.distributions as dist
@@ -57,12 +59,13 @@ class BnnWrapper(pl.LightningModule):
             self.net = InceptionModel(activation=activation, 
                 bias=bias).to(device=device)
         elif archi == "bigception":
-            self.net = BigCeption(activation=activation, 
+            self.net = BigCeption(n_features, activation=activation, 
                 bias=bias).to(device=device)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
-        self.net.apply(weights_init)
+        with torch.no_grad():
+            self.net.apply(weights_init)
 
         self.opt_name = optimizer
         self.configure_optimizers()
@@ -88,7 +91,8 @@ class BnnWrapper(pl.LightningModule):
         elif self.opt_name == "adagrad": 
             self.optimizer = pyro.optim.Adagrad({"lr": self.lr})
         elif self.opt_name == "adam":
-            self.optimizer = pyro.optim.Adam({"lr": self.lr, "betas": (0.95, 0.999)})
+            self.optimizer = pyro.optim.ClippedAdam(
+                {"lr": self.lr, "betas": (0.95, 0.999), 'clip_norm': 15})
         elif self.opt_name == "nadam":
             self.optimizer = pyro.optim.NAdam({"lr": self.lr})
         else:
@@ -172,7 +176,7 @@ class VIBnnWrapper(BnnWrapper):
             print("Using Radial Guide")
             self.fit_ctxt = contextlib.nullcontext
         else: 
-            raise ValueError("Guide unknown. Choose from 'normal', 'radial'.")
+            raise RuntimeError("Guide unknown. Choose from 'normal', 'radial'.")
         
         self.num_particles = num_particles
         self.loss_name = "elbo"
@@ -192,7 +196,7 @@ class VIBnnWrapper(BnnWrapper):
         )
         
         self.likelihood = tyxe.likelihoods.HeteroskedasticGaussian(
-            dataset_size, #scale=likelihood_scale
+            dataset_size, positive_scale=False #scale=likelihood_scale
         )
         if pretrain_file is not None:
             print("Initializing weight distributions from pretrained net")
@@ -218,7 +222,7 @@ class VIBnnWrapper(BnnWrapper):
 
         else:
             if last_layer > 0:
-                raise ValueError("No pretrain file but last_layer True")
+                raise RuntimeError("No pretrain file but last_layer True")
             
             self.guide = partial(guide_base, init_scale=q_scale)
         #self.guide = None
@@ -240,7 +244,7 @@ class VIBnnWrapper(BnnWrapper):
     def test_step(self, batch, batch_idx):
         (x, y) = batch[0], batch[1].squeeze()
         with self.fit_ctxt():
-            output = self.bnn.predict(x, num_predictions=5)
+            output = self.bnn.predict(x, num_predictions=10)
             if isinstance(output, tuple):
                 m, sd = output
             else:
@@ -265,10 +269,13 @@ class VIBnnWrapper(BnnWrapper):
 
         with self.fit_ctxt():
             elbo = self.svi.evaluate_loss(x, y.unsqueeze(-1))
-            output = self.bnn.predict(x, num_predictions=5)
+            # Aggregate = False if num_prediction = 1, else nans in sd
+            output = self.bnn.predict(x, num_predictions=1, aggregate=False)
+            
             if isinstance(output, tuple):
                 m, sd = output
             else:
+                output = output.squeeze()
                 m, sd = output[:, 0], output[:, 1]
             kl = self.svi_no_obs.evaluate_loss(x)
         
@@ -292,16 +299,20 @@ class VIBnnWrapper(BnnWrapper):
         # like checkpointing etc.
         self.trainer.fit_loop.epoch_loop.batch_loop.manual_loop.\
                                     optim_step_progress.increment_ready()
+        
         with self.fit_ctxt():
             elbo = self.svi.step(x, y.unsqueeze(-1))
-            output = self.bnn.predict(x, num_predictions=1)
-            if isinstance(output, tuple):
+            # Aggregate = False if num_prediction = 1, else nans in sd
+            output = self.bnn.predict(x, num_predictions=1, aggregate=False)
+            if isinstance(output, tuple):   # Homoscedastic
                 m, sd = output
-            else:
+            else:                           # Heteroscedastic
+                output = output.squeeze()
                 m, sd = output[:, 0], output[:, 1]
             kl = self.svi_no_obs.evaluate_loss(x)
         self.trainer.fit_loop.epoch_loop.batch_loop.manual_loop.\
                                     optim_step_progress.increment_completed()
+        
         
         mse = F.mse_loss(y.squeeze(), m.squeeze()).item()
         self.log("mse/train", mse)

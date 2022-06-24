@@ -55,6 +55,8 @@ class Conv(nn.Module):
             out_size
         )
         self.softmax = nn.Softmax(dim=1)
+        
+        self.thresh = nn.Threshold(1e-9, 1e-9)
             
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)
@@ -65,7 +67,9 @@ class Conv(nn.Module):
 
     def forward(self, x):
         if self.typ == "regression": 
-            return 1e-9 + 100 * F.softplus(self.last(self.layers(x.unsqueeze(1))))
+            x = F.softplus(self.last(self.layers(x.unsqueeze(1))))
+            x = self.thresh(x)
+            return x
         elif self.typ == "classification": 
             return self.softmax(self.last(self.layers(x.unsqueeze(1))))
         
@@ -125,6 +129,7 @@ class Conv2(nn.Module):
                 act()
             )
         self.last = nn.Linear(1024, self.out_size)
+        self.thresh = nn.Threshold(1e-9, 1e-9)
 
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)
@@ -135,7 +140,9 @@ class Conv2(nn.Module):
 
     def forward(self, x):
         if self.typ == "regression": 
-            return 1e-9 + 100* F.softplus(self.last(self.layers(x.unsqueeze(1))))
+            x = F.softplus(self.last(self.layers(x.unsqueeze(1))))
+            x = self.thresh(x)
+            return x
         elif self.typ == "classification": 
             return self.softmax(self.last(self.layers(x.unsqueeze(1))))
         

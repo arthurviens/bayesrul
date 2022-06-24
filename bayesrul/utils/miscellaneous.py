@@ -19,7 +19,9 @@ def weights_init(m):
     
     """
     if isinstance(m, nn.Conv2d):
-        torch.nn.init.xavier_uniform_(m.weight)
+        torch.nn.init.xavier_normal_(m.weight)
+    if isinstance(m, nn.Conv1d):
+        torch.nn.init.xavier_normal_(m.weight)
     elif isinstance(m, nn.Linear):
         torch.nn.init.kaiming_normal_(m.weight)
 

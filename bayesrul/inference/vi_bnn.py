@@ -1,4 +1,5 @@
 from pathlib import Path
+from tqdm import tqdm
 
 import torch
 
@@ -6,10 +7,11 @@ import pytorch_lightning as pl
 
 from bayesrul.inference.inference import Inference
 from bayesrul.lightning_wrappers.frequentist import DnnPretrainWrapper
+from bayesrul.lightning_wrappers.bayesian import VIBnnWrapper
 from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger
 from bayesrul.utils.plotting import PredLogger
-from bayesrul.lightning_wrappers.bayesian import VIBnnWrapper
 
+import pyro 
 
 class Dotdict(dict):
     """dot.notation access to dictionary attributes"""
@@ -126,7 +128,11 @@ class VI_BNN(Inference):
 
     def epistemic_aleatoric_uncertainty(self):
         self.dnn.test_preds
-        ...
+        for i, (x, y) in enumerate(tqdm(self.data.test_dataloader())):
+            print(f"i : {x.shape}")
+
+
+            break
 
     def num_params(self) -> int:
         ...
