@@ -6,19 +6,35 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
 
+from abc import ABC, abstractmethod
+
 import torch
 
-class PredLogger:
+
+
+class Saver:
     """
     Class to save and load labels and predictions on test set 
         Also saves and loads stdev for bayesian models
     """
-    def __init__(self, path, filename=None):
+    def __init__(self, path):
         self.path = Path(path, 'predictions')
         self.path.mkdir(exist_ok=True)
+
+    @abstractmethod
+    def save(self):
+        ...
+
+    @abstractmethod
+    def load(self):
+        ...
+
+
+class PredSaver(Saver):
+    def __init__(self, path, filename=None):
+        super().__init__(path)
         if filename is None:
             filename = 'preds.npy'
-            
         self.file_path = Path(self.path, filename)
 
     def save(self, test_preds):
@@ -26,8 +42,7 @@ class PredLogger:
             to_save = np.array([test_preds['preds'], 
                 test_preds['labels'], test_preds['stds']])
         else:
-            to_save = np.array([test_preds['preds'], test_preds['labels']])
-        
+            to_save = np.array([test_preds['preds'], test_preds['labels']])        
         np.save(self.file_path, to_save)
 
     def load(self):
@@ -37,6 +52,35 @@ class PredLogger:
                     'stds': outputs[2, :]}
         else:
             return {'preds': outputs[0, :], 'labels': outputs[1, :]}
+
+
+class UncertaintySaver(Saver):
+    def __init__(self, path, filename=None):
+        super().__init__(path)
+        if filename is None:
+            filename = 'uncertainty.npy'
+        self.file_path = Path(self.path, filename)
+
+    def save(self, test_unc):
+        to_save = np.array([
+            test_unc['unweighted_pred_loc'],
+            test_unc['pred_var'], 
+            test_unc['ep_var'], 
+            test_unc['al_var']
+        ])
+        np.save(self.file_path, to_save)
+        
+    def load(self):
+        outputs = np.load(self.file_path)
+        return {
+            'unweighted_pred_loc': outputs[0, :],
+            'pred_var': outputs[1, :],
+            'ep_var': outputs[2, :],
+            'al_var': outputs[3, :],
+        }
+        
+
+
 
 
 def plot_rul_pred(out, std=False):
@@ -139,6 +183,19 @@ def plot_one_rul_pred(out, idx, std=False):
     #ax.spines["bottom"].set(linewidth=2, position=['data',0])
 
     return fig, ax
+
+
+
+def plot_uncertainty(preds, unc):
+    pred_var = unc['pred_var']
+    ep_var = unc['ep_var']
+    al_var = unc['al_var']
+
+    pred_unc = pred_var.sqrt()
+    ep_unc = ep_var.sqrt()
+    al_unc = al_var.sqrt()
+
+    # TODO
 
 
 

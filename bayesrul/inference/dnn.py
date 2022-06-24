@@ -9,7 +9,7 @@ from pytorch_lightning.callbacks import EarlyStopping
 from bayesrul.inference.inference import Inference
 from bayesrul.lightning_wrappers.frequentist import DnnWrapper
 from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger
-from bayesrul.utils.plotting import PredLogger
+from bayesrul.utils.plotting import PredSaver
 
 
 class Dotdict(dict):
@@ -99,7 +99,7 @@ class DNN(Inference):
         ) # Silence warning
         
         tester.test(dnn, self.data, verbose=False)
-        predLog = PredLogger(self.base_log_dir)
+        predLog = PredSaver(self.base_log_dir)
         predLog.save(dnn.test_preds)
 
 

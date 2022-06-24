@@ -37,8 +37,10 @@ class DnnWrapper(pl.LightningModule):
                     dropout_freq=0.25, bias=bias, typ=typ)
         elif archi == "inception":
             self.net = InceptionModel(activation=activation, bias=bias)
+        elif archi == "bigception":
+            self.net = BigCeption(n_features, activation=activation, bias=bias)
         else:
-            raise ValueError(f"Model architecture {archi} not implemented")
+            raise RuntimeError(f"Model architecture {archi} not implemented")
 
         if (loss == 'mse') or (loss == 'MSE'):
             self.criterion = F.mse_loss
@@ -47,7 +49,7 @@ class DnnWrapper(pl.LightningModule):
             self.criterion = F.l1_loss
             self.loss = 'l1'
         else:
-            raise ValueError(f"Loss {loss} not supported. Choose from"
+            raise RuntimeError(f"Loss {loss} not supported. Choose from"
                 " ['mse', 'l1']")
                 
         self.lr = lr
@@ -103,7 +105,7 @@ class DnnWrapper(pl.LightningModule):
     @staticmethod
     def add_model_specific_args(parent_parser):
         """To initialize from checkpoint, without giving init args """
-        parser = parent_parser.add_argument_group("NCMAPSSModel")
+        parser = parent_parser.add_argument_group("DnnWrapper")
         parser.add_argument("--net", type=str, default="linear")
         return parent_parser
 
@@ -132,9 +134,9 @@ class DnnPretrainWrapper(pl.LightningModule):
         elif archi == "inception":
             self.net = InceptionModel(activation=activation, bias = bias)
         elif archi == "bigception":
-            self.net = BigCeption(activation=activation, bias=bias)
+            self.net = BigCeption(n_features, activation=activation, bias=bias)
         else:
-            raise ValueError(f"Model architecture {archi} not implemented")
+            raise RuntimeError(f"Model architecture {archi} not implemented")
 
         if (loss == 'mse') or (loss == 'MSE'):
             self.criterion = F.mse_loss
@@ -143,7 +145,7 @@ class DnnPretrainWrapper(pl.LightningModule):
             self.criterion = F.l1_loss
             self.loss = 'l1'
         else:
-            raise ValueError(f"Loss {loss} not supported. Choose from"
+            raise RuntimeError(f"Loss {loss} not supported. Choose from"
                 " ['mse', 'l1']")
                 
         self.lr = lr

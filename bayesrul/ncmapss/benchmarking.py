@@ -20,20 +20,20 @@ def objective(trial: optuna.trial.Trial) -> float:
 
     #bias = trial.suggest_categorical("bias", [True, False])
     prior_loc = 0 #trial.suggest_float("prior_loc", -0.2, 0.2)
-    prior_scale = trial.suggest_float("prior_scale", 1e-4, 5, log=True)
+    prior_scale = trial.suggest_float("prior_scale", 1e-4, 1, log=True)
     likelihood_scale = 0 #trial.suggest_float("likelihood_scale", 1e-2, 1e2, log=True)
-    q_scale = trial.suggest_float("q_scale", 1e-4, 10, log=True)
+    q_scale = trial.suggest_float("q_scale", 1e-4, 1e-1, log=True)
     fit_context = trial.suggest_categorical("fit_context", ['lrt', 'flipout']) 
-    lr = trial.suggest_float("lr", 1e-4, 1, log=True)
+    lr = trial.suggest_float("lr", 1e-4, 1e-1, log=True)
     num_particles = 1# trial.suggest_categorical("num_particles", [1, 3])
     guide_base = trial.suggest_categorical("guide_base", ['normal', 'radial'])
-    optimizer = trial.suggest_categorical("optimizer", ['adam', 'nadam', 'sgd', 'adagrad'])
+    optimizer = trial.suggest_categorical("optimizer", ['adam', 'nadam', 'sgd'])
     args.archi = trial.suggest_categorical("args.archi", 
             ['linear', 'conv', 'inception', 'bigception'])
     args.activation = trial.suggest_categorical("args.activation", 
-        ['sigmoid', 'tanh', 'relu'])
+        ['leaky_relu', 'tanh', 'relu'])
     args.last_layer = False #trial.suggest_categorical("args.last_layer", [True, False])
-    args.pretrain = trial.suggest_categorical("args.pretrain", [0, 75])
+    args.pretrain = trial.suggest_categorical("args.pretrain", [0, 50])
 
 
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
@@ -43,7 +43,6 @@ def objective(trial: optuna.trial.Trial) -> float:
         logger=True,
         enable_checkpointing=False,
         max_epochs=EPOCHS,
-        callbacks=[PyTorchLightningPruningCallback(trial, monitor=monitor)],
     )
 
     hyperparams = {
@@ -52,7 +51,6 @@ def objective(trial: optuna.trial.Trial) -> float:
         'prior_scale' : prior_scale,
         'likelihood_scale' : likelihood_scale,
         'q_scale' : q_scale,
-        'mode' : 'vi',
         'fit_context' : fit_context,
         'lr' : lr,
         'guide_base' : guide_base,
@@ -122,20 +120,20 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     pruner: optuna.pruners.BasePruner = (
-        optuna.pruners.HyperbandPruner()
+        optuna.pruners.NopPruner
     )
     study = optuna.create_study(
         direction="minimize",
         study_name="optuna_1", 
         pruner=pruner,
-        storage="sqlite:///studies.db",
+        storage="sqlite:///study.db",
         load_if_exists=True,
     )
     study.optimize(
         objective, 
         n_trials=500, 
         timeout=None,
-        catch=(ValueError,),
+        catch=(RuntimeError,),
     )
     #joblib.dump(study, "optuna2.pkl")
     df = study.trials_dataframe()

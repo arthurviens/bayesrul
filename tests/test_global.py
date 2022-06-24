@@ -3,7 +3,7 @@ import pytest
 from pathlib import Path
 from bayesrul import __version__
 from bayesrul.utils.lmdb_utils import make_slice
-from bayesrul.utils.plotting import PredLogger
+from bayesrul.utils.plotting import PredSaver
 
 
 class DangerousOperationError(Exception):
@@ -25,13 +25,13 @@ def test_make_slice():
     assert all([s[i] == true_s[i] for i in range(len(s))])
 
 
-def test_PredLogger():
+def test_PredSaver():
     try:
         preddict = {'preds': [1,2,3], 'labels': [4,5,6]}
         
         base_log_dir = './tests/'
 
-        predLog = PredLogger(base_log_dir)
+        predLog = PredSaver(base_log_dir)
         predLog.save(preddict)
 
         retrieved = predLog.load()
