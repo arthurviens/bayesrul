@@ -36,7 +36,8 @@ class DnnWrapper(pl.LightningModule):
             self.net = Conv(win_length, n_features, activation=activation,
                     dropout_freq=0.25, bias=bias, typ=typ)
         elif archi == "inception":
-            self.net = InceptionModel(activation=activation, bias=bias)
+            self.net = InceptionModel(win_length, n_features, 
+                    activation=activation, bias=bias)
         elif archi == "bigception":
             self.net = BigCeption(n_features, activation=activation, bias=bias)
         else:
@@ -132,9 +133,11 @@ class DnnPretrainWrapper(pl.LightningModule):
             self.net = Conv(win_length, n_features, activation=activation,
                 bias = bias, typ=typ)
         elif archi == "inception":
-            self.net = InceptionModel(activation=activation, bias = bias)
+            self.net = InceptionModel(win_length, n_features, 
+                    activation=activation, bias=bias)
         elif archi == "bigception":
-            self.net = BigCeption(n_features, activation=activation, bias=bias)
+            self.net = BigCeption(win_length,n_features, 
+                    activation=activation, bias=bias)
         else:
             raise RuntimeError(f"Model architecture {archi} not implemented")
 
