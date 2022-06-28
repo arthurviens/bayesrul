@@ -112,7 +112,6 @@ def plot_rul_pred(out, std=False):
     return fig, ax
 
 
-
 def findNewRul(arr):
     maxrul = np.inf
     indexes = [0]
@@ -123,6 +122,7 @@ def findNewRul(arr):
         else:
             maxrul = val
     return indexes
+
 
 def plot_one_rul_pred(out, idx, std=False):
     preds = out['preds']
@@ -152,8 +152,7 @@ def plot_one_rul_pred(out, idx, std=False):
     
     total_sampling_coef = 10 * (30 + (len(df.index) - 1) * 10)
     flight_hours = (df.index / df.index.max()) * total_sampling_coef / (60*60)
-    if engines[0] == 1:
-        flight_hours *= 3
+    
 
     n = len(preds)
     assert n == len(labels), "Inconsistent sizes predictions {}, labels {}"\
@@ -186,16 +185,78 @@ def plot_one_rul_pred(out, idx, std=False):
 
 
 
-def plot_uncertainty(preds, unc):
+def plot_uncertainty(preds, unc, idx):
     pred_var = unc['pred_var']
     ep_var = unc['ep_var']
     al_var = unc['al_var']
 
-    pred_unc = pred_var.sqrt()
-    ep_unc = ep_var.sqrt()
-    al_unc = al_var.sqrt()
+    pred_unc = np.sqrt(pred_var)
+    ep_unc = np.sqrt(ep_var)
+    al_unc = np.sqrt(al_var)
 
-    # TODO
+    fig, ax = plt.subplots()
+    ax.plot(range(len(preds)), pred_unc, label="Predictive uncertainty")
+    ax.plot(range(len(preds)), ep_unc, label="Epistemic uncertainty")
+    ax.plot(range(len(preds)), al_unc, label="Aleatoric uncertainty")
+
+
+    indexes = findNewRul(labels)
+    assert (idx > 0) & (idx < len(indexes)), f"Could not find {idx}th engine."
+    preds = preds[indexes[idx-1]:indexes[idx]]
+    labels = labels[indexes[idx-1]:indexes[idx]]
+
+    data = NCMAPSSDataModule('../data/ncmapss/', 10000, all_dset=True)
+    loader = data.test_dataloader()
+    xx, yy, zz = pd.Series(dtype='object'), pd.Series(dtype='object'), pd.Series(dtype='object')
+    for x, y, z, t, u, v in loader:
+        xx = pd.concat([xx, pd.Series(x.detach().flatten())])
+        yy = pd.concat([yy, pd.Series(y.detach().flatten())])
+        zz = pd.concat([zz, pd.Series(z.detach().flatten())])
+
+    df = pd.concat([xx, yy, zz], axis=1).rename(columns={0: 'ds_id', 1: 'unit_id', 2: 'win_id'}).reset_index(drop=True)
+    df = df[indexes[idx-1]:indexes[idx]].reset_index(drop=True)
+
+    engines = df['unit_id'].unique()
+    assert len(engines) == 1, f"Different engines in selected set {engines}"
+    
+    total_sampling_coef = 10 * (30 + (len(df.index) - 1) * 10)
+    flight_hours = (df.index / df.index.max()) * total_sampling_coef / (60*60)
+
+    fig, axes = plt.subplots(nrows=2, ncols=1, figsize = (20, 5))
+    axes[0].plot(flight_hours, preds, color='blue', linewidth = 0.5,label='Mean RUL predicted')
+    axes[0].plot(flight_hours, labels, color='black', linewidth = 3, label='True RUL')
+    
+    axes[0].fill_between(flight_hours, preds-ep_unc, preds+ep_unc, 
+            color='lightskyblue', alpha=0.3, label="Epistemic uncertainty")
+
+    axes[0].set_title(f"RUL prediction for engine #{engines[0]:03d}")
+    axes[0].set_xlabel("Hours of flight (accelerated deterioration)")
+    axes[0].set_ylabel("Remaining life in flight cycles")
+    #plt.ylim(-1, 100)
+    axes[0].grid()
+    axes[0].legend()
+
+    axes[0].spines["right"].set_visible(False)
+    axes[0].spines["top"].set_visible(False)
+
+
+    axes[1].plot(flight_hours, preds, color='blue', linewidth = 0.5,label='Mean RUL predicted')
+    axes[1].plot(flight_hours, labels, color='black', linewidth = 3, label='True RUL')
+    
+    axes[1].fill_between(flight_hours, preds-al_unc, preds+al_unc, 
+            color='lightskyblue', alpha=0.3, label="Aleatoric uncertainty")
+
+    axes[1].set_title(f"RUL prediction for engine #{engines[0]:03d}")
+    axes[1].set_xlabel("Hours of flight (accelerated deterioration)")
+    axes[1].set_ylabel("Remaining life in flight cycles")
+    #plt.ylim(-1, 100)
+    axes[1].grid()
+    axes[1].legend()
+
+    axes[1].spines["right"].set_visible(False)
+    axes[1].spines["top"].set_visible(False)
+
+    return fig, ax
 
 
 

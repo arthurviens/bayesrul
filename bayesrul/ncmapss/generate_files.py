@@ -16,10 +16,10 @@ if __name__ == "__main__":
             "N-CMAPSS_DS05"
         ],
         subdata = ['X_s', 'A'],
-        moving_avg=True, # Smooth the values of the sensors
-        win_length=30,  # Window size
-        win_step=10,    # Window step
-        skip_obs=10,    # How much to downsample the huge dataset
+        moving_avg=False, # Smooth the values of the sensors
+        win_length=50,  # Window size
+        win_step=20,    # Window step
+        skip_obs=5,    # How much to downsample the huge dataset
         bits=32,      # Size of numbers in memory
     )
 

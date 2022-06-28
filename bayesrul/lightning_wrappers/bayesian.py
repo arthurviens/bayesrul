@@ -56,10 +56,10 @@ class BnnWrapper(pl.LightningModule):
             self.net = Conv(win_length, n_features, activation=activation, 
                 bias=bias, typ='regression').to(device=device)
         elif archi == "inception":
-            self.net = InceptionModel(activation=activation, 
-                bias=bias).to(device=device)
+            self.net = InceptionModel(win_length, n_features, 
+                activation=activation, bias=bias).to(device=device)
         elif archi == "bigception":
-            self.net = BigCeption(n_features, activation=activation, 
+            self.net = BigCeption(win_length, n_features, activation=activation, 
                 bias=bias).to(device=device)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")

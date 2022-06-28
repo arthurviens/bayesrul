@@ -71,23 +71,15 @@ class VI_BNN(Inference):
             default_hp_metric=False,
         )
 
-    def fit(self, epochs):
 
-        self.trainer = pl.Trainer(
-            default_root_dir=self.base_log_dir,
-            gpus=[self.GPU], 
-            max_epochs=epochs,
-            log_every_n_steps=2,
-            logger=self.logger,
-        )
-
+    def _define_model(self):
         checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
         if self.args['pretrain'] > 0 and checkpoint_file:
             raise ValueError("Can not pretrain and resume from checkpoint")
 
         if self.args.pretrain > 0 and (not checkpoint_file):
             pre_net = DnnPretrainWrapper(self.data.win_length, self.data.n_features,
-                archi = self.args.archi, bias=self.hyperparams['bias'])
+                archi = self.args.archi, bias=self.args['bias'])
             pre_trainer = pl.Trainer(gpus=[self.GPU], max_epochs=self.args.pretrain, logger=False,
                 checkpoint_callback=False)
 
@@ -110,8 +102,24 @@ class VI_BNN(Inference):
                 self.data.train_size,
                 **self.args
             )
+    
 
-        self.trainer.fit(self.bnn, self.data)
+    def fit(self, epochs):
+        self.trainer = pl.Trainer(
+            default_root_dir=self.base_log_dir,
+            gpus=[self.GPU], 
+            max_epochs=epochs,
+            log_every_n_steps=2,
+            logger=self.logger,
+        )
+
+        if not hasattr(self, 'bnn'):
+            self._define_model()
+        
+        if epochs > 0:
+            self.trainer.fit(self.bnn, self.data)
+        else:
+            raise RuntimeError(f"Cannot fit model for {epochs} epochs.")
 
     def test(self):
 
@@ -128,9 +136,13 @@ class VI_BNN(Inference):
 
     def epistemic_aleatoric_uncertainty(self):
         dim = 0
-        self.bnn.test_preds
+        
+        n = 0
+        pred_loc, predictive_var, epistemic_var, aleatoric_var = [], [], [], []
         for i, (x, y) in enumerate(tqdm(self.data.test_dataloader())):
-            
+            x, y = x.to(self.args.device), y.to(self.args.device)
+            n += len(x)
+
             output = self.bnn.bnn.predict(x, num_predictions=10, aggregate=False)
             if isinstance(output, tuple):
                 loc, scale = output
@@ -138,14 +150,24 @@ class VI_BNN(Inference):
                 output = output.squeeze()
                 loc, scale = output[:, :, 0], output[:, :, 1]
             # Sd is the PREDICTIVE VARIANCE 
-            pred_loc = loc.mean(axis=dim)
+            pred_loc.append(loc.mean(axis=dim))
 
-            predictive_var = (scale**2).mean(dim).add(loc.var(dim))
+            predictive_var.append((scale**2).mean(dim).add(loc.var(dim)))
             #predictive_unc = predictive_var.sqrt()
-            epistemic_var = loc.var(dim)
+            epistemic_var.append(loc.var(dim))
             #epistemic_unc = epistemic_var.sqrt()
-            aleatoric_var = (scale**2).mean(dim)
+            aleatoric_var.append((scale**2).mean(dim))
             #aleatoric_unc = aleatoric_var.sqrt()
+
+        pred_loc = torch.cat(pred_loc)
+        predictive_var = torch.cat(predictive_var)
+        epistemic_var = torch.cat(epistemic_var)
+        aleatoric_var = torch.cat(aleatoric_var)
+
+        assert len(pred_loc) == n, f"Size ({len(pred_loc)}) of uncertainties should match {n}"
+        assert len(predictive_var) == n, f"Size ({len(predictive_var)}) of uncertainties should match {n}"
+        assert len(epistemic_var) == n, f"Size ({len(epistemic_var)}) of uncertainties should match {n}"
+        assert len(aleatoric_var) == n, f"Size ({len(aleatoric_var)}) of uncertainties should match {n}"
 
         sav = UncertaintySaver(self.base_log_dir)
         sav.save({

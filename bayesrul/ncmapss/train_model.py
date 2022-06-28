@@ -50,6 +50,10 @@ if __name__ == "__main__":
                         action='store_true',
                         default=False,
                         help='Having only the last layer as Bayesian (default: False)')
+    parser.add_argument('--test',
+                        action='store_true',
+                        default=False,
+                        help='Just run the test phase (default: False)')
     parser.add_argument('--guide',
                     type=str,
                     default='normal',
@@ -61,27 +65,32 @@ if __name__ == "__main__":
     
 
     if args.bayesian:
-        hyp = {}
-        '''hyp = {
-                'activation': 'relu',
+        hyp = {
+                'activation': 'leaky_relu',
                 'bias' : True,
                 'prior_loc' : 0,
-                'prior_scale' : 2.9384869007207115,
+                'prior_scale' : 0.1,
                 'likelihood_scale' : 0, # Useless in Heteroskedastic case
-                'q_scale' : 0.00010734634159341767,
+                'q_scale' : 0.0007,
                 'fit_context' : 'lrt',
                 'num_particles' : 1,
                 'optimizer': 'sgd',
-                'lr' : 0.002205730851888167,
+                'lr' : 0.01,
                 'last_layer': args.last_layer,
                 'pretrain_file' : None,
-            }'''
+            }
 
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
         module = VI_BNN(args, data, hyp)
-        module.fit(0)
+        if not args.test:
+            module.fit(300)
+        else:
+            module._define_model()
+        #module.test()
         module.epistemic_aleatoric_uncertainty()
     else:
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
         module = DNN(args, data)
-        module.fit(2)
+        if not args.test:
+            module.fit(2)
+        module.test()
