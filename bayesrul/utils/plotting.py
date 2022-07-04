@@ -7,16 +7,13 @@ import seaborn as sns
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
 
 from abc import ABC, abstractmethod
+from typing import List, Union, Dict
 
 import torch
 
 
 
-class Saver:
-    """
-    Class to save and load labels and predictions on test set 
-        Also saves and loads stdev for bayesian models
-    """
+class Saver: # Deprecated
     def __init__(self, path):
         self.path = Path(path, 'predictions')
         self.path.mkdir(exist_ok=True)
@@ -30,57 +27,35 @@ class Saver:
         ...
 
 
-class PredSaver(Saver):
-    def __init__(self, path, filename=None):
-        super().__init__(path)
+class ResultSaver:
+    def __init__(self, path: str, filename: str = None) -> None:
+        self.path = Path(path, 'predictions')
+        self.path.mkdir(exist_ok=True)
         if filename is None:
-            filename = 'preds.npy'
+            filename = 'results.parquet'
         self.file_path = Path(self.path, filename)
 
-    def save(self, test_preds):
-        if 'stds' in test_preds.keys():
-            to_save = np.array([test_preds['preds'], 
-                test_preds['labels'], test_preds['stds']])
-        else:
-            to_save = np.array([test_preds['preds'], test_preds['labels']])        
-        np.save(self.file_path, to_save)
+    def save(self, df: pd.DataFrame) -> None:
+        if isinstance(df, dict):
+            df = pd.DataFrame(df)
+        assert isinstance(df, pd.DataFrame), f"{type(df)} is not a dataframe"
+        df.to_parquet(self.file_path)
 
-    def load(self):
-        outputs = np.load(self.file_path)
-        if outputs.shape[0] == 3:
-            return {'preds': outputs[0, :], 'labels': outputs[1, :],
-                    'stds': outputs[2, :]}
-        else:
-            return {'preds': outputs[0, :], 'labels': outputs[1, :]}
+    def load(self) -> pd.DataFrame:
+        return pd.read_parquet(self.file_path)
 
-
-class UncertaintySaver(Saver):
-    def __init__(self, path, filename=None):
-        super().__init__(path)
-        if filename is None:
-            filename = 'uncertainty.npy'
-        self.file_path = Path(self.path, filename)
-
-    def save(self, test_unc):
-        to_save = np.array([
-            test_unc['unweighted_pred_loc'],
-            test_unc['pred_var'], 
-            test_unc['ep_var'], 
-            test_unc['al_var']
-        ])
-        np.save(self.file_path, to_save)
-        
-    def load(self):
-        outputs = np.load(self.file_path)
-        return {
-            'unweighted_pred_loc': outputs[0, :],
-            'pred_var': outputs[1, :],
-            'ep_var': outputs[2, :],
-            'al_var': outputs[3, :],
-        }
-        
-
-
+    def append(self, series: Union[List[pd.Series], Dict[str, np.array]]) -> None:
+        if isinstance(series, list):
+            series = pd.concat(series, axis=1)
+        if isinstance(series, dict):
+            series = pd.DataFrame(series)
+        df = self.load()
+        df = pd.concat([df, series], axis=1)
+        assert isinstance(df, pd.DataFrame), f"{type(df)} is not a dataframe"
+        s = df.isna().sum()
+        if isinstance(s, pd.Series): s = s.sum()
+        assert s == 0, "NaNs introduced in results dataframe"
+        self.save(df)
 
 
 def plot_rul_pred(out, std=False):
@@ -124,7 +99,7 @@ def findNewRul(arr):
     return indexes
 
 
-def plot_one_rul_pred(out, idx, std=False):
+def plot_one_rul_pred(out, idx, std=False, fig=None):
     preds = out['preds']
     labels = out['labels']
     if std:
@@ -158,8 +133,10 @@ def plot_one_rul_pred(out, idx, std=False):
     assert n == len(labels), "Inconsistent sizes predictions {}, labels {}"\
         .format(n, len(labels))
 
-
-    fig, ax = plt.subplots(figsize = (20, 5))
+    if fig is None:
+        fig, ax = plt.subplots(figsize = (20, 5))
+    else:
+        ax = fig.add_subplot(1,1,1)
     ax.plot(flight_hours, preds, color='blue', linewidth = 0.5,label='Mean RUL predicted')
     ax.plot(flight_hours, labels, color='black', linewidth = 3, label='True RUL')
     if std:
