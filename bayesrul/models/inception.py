@@ -17,6 +17,7 @@ class InceptionModule(nn.Module):
         filterpool,
         activation: nn.Module,
         bias = True,
+        dropout = 0,
     ):
         super().__init__()
         self.conv1 = nn.Sequential(
@@ -36,6 +37,12 @@ class InceptionModule(nn.Module):
             nn.Conv1d(n_features, filterpool, kernel_size=3, padding='same', bias=bias),
             activation()
         )
+        if dropout > 0:
+            self.conv1.add_module('branch1_dropout', nn.Dropout(dropout/4))
+            self.conv3.add_module('branch2_dropout', nn.Dropout(dropout/4))
+            self.conv5.add_module('branch3_dropout', nn.Dropout(dropout/4))
+            self.convpool.add_module('branch4_dropout', nn.Dropout(dropout/4))
+            
     
     def forward(self, x):
         branches = [self.conv1(x), self.conv3(x), self.conv5(x), self.convpool(x)]
@@ -61,6 +68,7 @@ class InceptionModuleReducDim(nn.Module):
         filterpool,
         activation: nn.Module,
         bias = True,
+        dropout = 0,
     ):
         super().__init__()
         self.branch1 = nn.Sequential(
@@ -84,6 +92,11 @@ class InceptionModuleReducDim(nn.Module):
             nn.Conv1d(n_features, filterpool, kernel_size=1, padding=0, bias=bias),
             activation()
         )
+        if dropout > 0:
+            self.branch1.add_module('branch1_dropout', nn.Dropout(dropout/4))
+            self.branch2.add_module('branch2_dropout', nn.Dropout(dropout/4))
+            self.branch3.add_module('branch3_dropout', nn.Dropout(dropout/4))
+            self.branch4.add_module('branch4_dropout', nn.Dropout(dropout/4))
     
     def forward(self, x):
         branches = [self.branch1(x), self.branch2(x), self.branch3(x), self.branch4(x)]
@@ -97,7 +110,8 @@ class InceptionModuleReducDim(nn.Module):
         self.load_state_dict(state_dict)
 
 class InceptionModel(nn.Module):
-    def __init__(self, win_length, n_features, activation='relu', bias='True'):
+    def __init__(self, win_length, n_features, 
+            dropout = 0, activation='relu', bias='True'):
         super().__init__()
 
         if activation == 'relu':
@@ -115,18 +129,23 @@ class InceptionModel(nn.Module):
 
         self.layers = nn.Sequential(
             InceptionModule(n_features,
-                27, 27, 27, 27, activation = act, bias = bias
+                27, 27, 27, 27, activation = act, bias = bias, dropout=dropout
             ),
             InceptionModuleReducDim(
-                27+27+27+27, 8, 64, 8, 64, 8, 32, activation = act, bias = bias
+                27+27+27+27, 8, 64, 8, 64, 8, 32, activation = act, bias = bias,
+                dropout=dropout,
             ),
             InceptionModuleReducDim(
-                8+8+8+32, 4, 16, 4, 16, 4, 8, activation = act, bias = bias
+                8+8+8+32, 4, 16, 4, 16, 4, 8, activation = act, bias = bias,
+                dropout=dropout,
             ),
             nn.Flatten(),
             nn.Linear((4 + 4 + 4 + 8) * win_length, 64),
             act(), 
         )
+        if dropout > 0:
+            self.layers.add_module('n-1_dropout', nn.Dropout(dropout))
+
         self.last = nn.Linear(64, self.out_size)
 
         self.thresh = nn.Threshold(1e-9, 1e-9)
@@ -146,7 +165,8 @@ class InceptionModel(nn.Module):
 
 
 class BigCeption(nn.Module):
-    def __init__(self, win_length, n_features, activation='relu', bias='True'):
+    def __init__(self, win_length, n_features, activation='relu', bias='True',
+            dropout=0):
         super().__init__()
         assert n_features == 18, \
             "TODO, Generalize Inception model for other than 18 features"
@@ -165,12 +185,18 @@ class BigCeption(nn.Module):
         self.out_size = 2 
 
         self.layers = nn.Sequential(
-            InceptionModule(n_features, 27, 27, 27, 27, activation = act, bias = bias),
-            InceptionModuleReducDim(27+27+27+27, 16, 64, 16, 64, 16, 32, activation = act, bias = bias),
+            InceptionModule(n_features, 27, 27, 27, 27, activation = act, 
+                    dropout=dropout, bias = bias),
+            InceptionModuleReducDim(27+27+27+27, 16, 64, 16, 64, 16, 32, 
+                    dropout=dropout, activation = act, bias = bias),
             nn.Flatten(),
             nn.Linear((16+16+16+32) * win_length, 64),
             act(), 
         )
+        if dropout > 0:
+            self.layers.add_module('n-1_dropout', nn.Dropout(dropout))
+
+
         self.last = nn.Linear(64, self.out_size)
         self.thresh = nn.Threshold(1e-9, 1e-9)
         

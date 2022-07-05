@@ -5,6 +5,15 @@ import torch.nn as nn
 import pytorch_lightning as pl
 from pytorch_lightning.utilities import rank_zero_only
 
+
+class Dotdict(dict):
+    """dot.notation access to dictionary attributes"""
+    __getattr__ = dict.get
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
+
+
+
 # To get rid of the tensorboard epoch plot
 class TBLogger(pl.loggers.TensorBoardLogger):
     @rank_zero_only
@@ -43,3 +52,24 @@ def get_checkpoint(path, version=None) -> None:
         if e == FileNotFoundError:
             print("Could not find any checkpoint in {}".format(d))
         return None
+
+
+def enable_dropout(model):
+    """ Function to enable the dropout layers during test-time """
+    for m in model.modules():
+        if m.__class__.__name__.startswith('Dropout'):
+            m.train()
+
+
+def numel(m: torch.nn.Module, only_trainable: bool = False):
+    """
+    returns the total number of parameters used by `m` (only counting
+    shared parameters once); if `only_trainable` is True, then only
+    includes parameters with `requires_grad = True`
+    """
+    assert isinstance(m, torch.nn.Module), f"{type(m)} is not a nn.Module"
+    parameters = list(m.parameters())
+    if only_trainable:
+        parameters = [p for p in parameters if p.requires_grad]
+    unique = {p.data_ptr(): p for p in parameters}.values()
+    return sum(p.numel() for p in unique)

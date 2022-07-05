@@ -311,7 +311,6 @@ class VIBnnWrapper(BnnWrapper):
         self.trainer.fit_loop.epoch_loop.batch_loop.manual_loop.\
                                     optim_step_progress.increment_completed()
         
-        
         mse = F.mse_loss(y.squeeze(), loc.squeeze()).item()
         alphalambda = p_alphalamba(y.squeeze(), loc.squeeze(), scale).item()
         self.log('mse/train', mse)

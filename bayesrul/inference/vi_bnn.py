@@ -8,16 +8,10 @@ import pytorch_lightning as pl
 from bayesrul.inference.inference import Inference
 from bayesrul.lightning_wrappers.frequentist import DnnPretrainWrapper
 from bayesrul.lightning_wrappers.bayesian import VIBnnWrapper
-from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger
+from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger, Dotdict
 from bayesrul.utils.plotting import ResultSaver
 
 import pyro 
-
-class Dotdict(dict):
-    """dot.notation access to dictionary attributes"""
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
 
 
 class VI_BNN(Inference):
@@ -59,7 +53,8 @@ class VI_BNN(Inference):
             for key in hyperparams.keys():
                 hyp[key] = hyperparams[key]
 
-        self.args = Dotdict({**(args.__dict__), **hyp}) # Merge dicts
+        # Merge dicts and make attributes accessible by .
+        self.args = Dotdict({**(args.__dict__), **hyp}) 
 
         if self.args.guide == "radial": hyperparams['fit_context'] = 'null'
 

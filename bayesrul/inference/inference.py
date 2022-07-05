@@ -26,6 +26,12 @@ class Inference(ABC):
         ...
 
     @abstractmethod
+    def _define_model(
+        self
+    ):
+        ...
+
+    @abstractmethod
     def fit(
         self,
         epochs: int,
