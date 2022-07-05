@@ -26,6 +26,12 @@ class Inference(ABC):
         ...
 
     @abstractmethod
+    def _define_model(
+        self
+    ):
+        ...
+
+    @abstractmethod
     def fit(
         self,
         epochs: int,
@@ -41,6 +47,10 @@ class Inference(ABC):
     @abstractmethod
     def epistemic_aleatoric_uncertainty(self):
         ...
+
+    @property
+    def _args(self):
+        return(self.args)
 
     @property
     @abstractmethod

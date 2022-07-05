@@ -2,8 +2,20 @@ from bayesrul.ncmapss.dataset import NCMAPSSDataModule
 
 from bayesrul.inference.vi_bnn import VI_BNN
 from bayesrul.inference.dnn import DNN
+from bayesrul.inference.mc_dropout import MCDropout
 
 from torch.profiler import profile, record_function, ProfilerActivity
+from torch.profiler import schedule
+
+my_schedule = schedule(
+    skip_first=1,
+    wait=0,
+    warmup=1,
+    active=5,
+    repeat=1)
+
+
+import torch
 
 import argparse
 
@@ -69,13 +81,13 @@ if __name__ == "__main__":
                 'activation': 'leaky_relu',
                 'bias' : True,
                 'prior_loc' : 0,
-                'prior_scale' : 0.1,
+                'prior_scale' : 0.05,
                 'likelihood_scale' : 0, # Useless in Heteroskedastic case
-                'q_scale' : 0.0007,
+                'q_scale' : 0.0001,
                 'fit_context' : 'lrt',
                 'num_particles' : 1,
                 'optimizer': 'sgd',
-                'lr' : 0.01,
+                'lr' : 0.005,
                 'last_layer': args.last_layer,
                 'pretrain_file' : None,
             }
@@ -83,14 +95,21 @@ if __name__ == "__main__":
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
         module = VI_BNN(args, data, hyp)
         if not args.test:
-            module.fit(300)
+            """with profile(
+                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                on_trace_ready=torch.profiler.tensorboard_trace_handler('results/ncmapss/bayesian/profile/lightning_logs/')
+            ) as prof:"""
+
+            module.fit(50)
+            #prof.step
         else:
             module._define_model()
-        #module.test()
-        module.epistemic_aleatoric_uncertainty()
+        module.test()
+        module.epistemic_aleatoric_uncertainty(device=torch.device('cpu'))
     else:
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-        module = DNN(args, data)
+        #module = DNN(args, data)
+        module = MCDropout(args, data, 0.4)
         if not args.test:
-            module.fit(2)
+            module.fit(500)
         module.test()

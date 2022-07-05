@@ -7,8 +7,9 @@ from bayesrul.utils.miscellaneous import weights_init
 from bayesrul.models.inception import InceptionModel, BigCeption
 from bayesrul.models.linear import Linear
 from bayesrul.models.conv import Conv
-from tyxe.bnn import VariationalBNN
 from bayesrul.utils.radial import AutoRadial
+from bayesrul.utils.metrics import p_alphalamba
+from tyxe.bnn import VariationalBNN
 from torch.functional import F
 
 
@@ -17,6 +18,7 @@ from torch.autograd import detect_anomaly
 import tyxe
 import pyro
 import pyro.distributions as dist
+import pyro.infer.autoguide as ag
 from pyro.infer import SVI, MCMC, Trace_ELBO, JitTrace_ELBO
 from pyro.infer import TraceMeanField_ELBO, JitTraceMeanField_ELBO
 
@@ -41,6 +43,7 @@ class BnnWrapper(pl.LightningModule):
         archi='inception',
         activation='relu',
         optimizer='nadam',
+        out_size=2,
         lr=1e-3,
         device=torch.device('cuda:0'),
         **kwargs
@@ -51,16 +54,16 @@ class BnnWrapper(pl.LightningModule):
 
         if archi == "linear":
             self.net = Linear(win_length, n_features, activation=activation,
-                bias=bias, typ='regression').to(device=device)
+                bias=bias, out_size=out_size).to(device=device)
         elif archi == "conv":
             self.net = Conv(win_length, n_features, activation=activation, 
-                bias=bias, typ='regression').to(device=device)
+                bias=bias, out_size=out_size).to(device=device)
         elif archi == "inception":
-            self.net = InceptionModel(win_length, n_features, 
+            self.net = InceptionModel(win_length, n_features, out_size=out_size,
                 activation=activation, bias=bias).to(device=device)
         elif archi == "bigception":
             self.net = BigCeption(win_length, n_features, activation=activation, 
-                bias=bias).to(device=device)
+                out_size=out_size, bias=bias).to(device=device)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
@@ -114,7 +117,7 @@ class BnnWrapper(pl.LightningModule):
     @staticmethod
     def add_model_specific_args(parent_parser):
         """To initialize from checkpoint, without giving init args """
-        parser = parent_parser.add_argument_group("NCMAPSS_VIBnn")
+        parser = parent_parser.add_argument_group("BnnWrapper")
         parser.add_argument("--net", type=str, default="inception")
         return parent_parser
 
@@ -156,10 +159,6 @@ class VIBnnWrapper(BnnWrapper):
         )
         self.save_hyperparameters()
         closed_form_kl = True
-        
-        if pretrain_file is not None:
-            sd = torch.load(pretrain_file, map_location=device)
-            self.net.load_state_dict(sd)
 
         if fit_context == 'lrt':
             self.fit_ctxt = tyxe.poutine.local_reparameterization
@@ -168,6 +167,7 @@ class VIBnnWrapper(BnnWrapper):
         else:
             self.fit_ctxt = contextlib.nullcontext
 
+        guide_kwargs = {'init_scale': q_scale}
         if guide_base == 'normal':
             guide_base = tyxe.guides.AutoNormal
         elif guide_base == 'radial':
@@ -175,8 +175,12 @@ class VIBnnWrapper(BnnWrapper):
             closed_form_kl = False
             print("Using Radial Guide")
             self.fit_ctxt = contextlib.nullcontext
+        elif guide_base == 'lowrank':
+            guide_base = ag.AutoLowRankMultivariateNormal
+            guide_kwargs['rank'] = 4
+
         else: 
-            raise RuntimeError("Guide unknown. Choose from 'normal', 'radial'.")
+            raise RuntimeError("Guide unknown. Choose from 'normal', 'radial', 'lowrank'.")
         
         self.num_particles = num_particles
         self.loss_name = "elbo"
@@ -202,13 +206,8 @@ class VIBnnWrapper(BnnWrapper):
             print("Initializing weight distributions from pretrained net")
             self.net.load(pretrain_file, map_location=device)
             
-            if not last_layer:
-                self.guide = partial(
-                    guide_base,
-                    init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(self.net),
-                    init_scale=q_scale
-                )
-            else:
+            guide_kwargs['init_loc_fn']=tyxe.guides.PretrainedInitializer.from_net(self.net)
+            if last_layer:
                 print("Last_layer training only")
                 for module in self.net.modules():
                     if module is not self.net.last: # -> last layer !
@@ -216,16 +215,13 @@ class VIBnnWrapper(BnnWrapper):
                             delattr(module, param_name)
                             module.register_buffer(param_name, param.detach().data)
                 
-                self.guide = partial(guide_base,
-                    init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(self.net), 
-                    init_scale=q_scale)
-
         else:
             if last_layer > 0:
                 raise RuntimeError("No pretrain file but last_layer True")
             
-            self.guide = partial(guide_base, init_scale=q_scale)
+        self.guide = partial(guide_base, **guide_kwargs)
         #self.guide = None
+        
         
         self.bnn = VariationalBNN(
             self.net, 
@@ -274,16 +270,18 @@ class VIBnnWrapper(BnnWrapper):
             output = self.bnn.predict(x, num_predictions=1, aggregate=False)
             
             if isinstance(output, tuple):
-                m, sd = output
+                loc, scale = output
             else:
                 output = output.squeeze()
-                m, sd = output[:, 0], output[:, 1]
+                loc, scale = output[:, 0], output[:, 1]
             kl = self.svi_no_obs.evaluate_loss(x)
         
-        mse = F.mse_loss(y.squeeze(), m.squeeze())
+        mse = F.mse_loss(y.squeeze(), loc.squeeze())
+        alphalambda = p_alphalamba(y.squeeze(), loc.squeeze(), scale).item()
 
         self.log('elbo/val', elbo)
-        self.log("mse/val", mse)
+        self.log('mse/val', mse)
+        self.log('alphalambda/val', alphalambda)
         self.log('kl/val', kl)
         self.log('likelihood/val', elbo - kl)
         #return {'loss' : mse}
@@ -306,18 +304,19 @@ class VIBnnWrapper(BnnWrapper):
             # Aggregate = False if num_prediction = 1, else nans in sd
             output = self.bnn.predict(x, num_predictions=1, aggregate=False)
             if isinstance(output, tuple):   # Homoscedastic
-                m, sd = output
+                loc, scale = output
             else:                           # Heteroscedastic
                 output = output.squeeze()
-                m, sd = output[:, 0], output[:, 1]
+                loc, scale = output[:, 0], output[:, 1]
             kl = self.svi_no_obs.evaluate_loss(x)
         self.trainer.fit_loop.epoch_loop.batch_loop.manual_loop.\
                                     optim_step_progress.increment_completed()
         
-        
-        mse = F.mse_loss(y.squeeze(), m.squeeze()).item()
-        self.log("mse/train", mse)
-        self.log("elbo/train", elbo)
+        mse = F.mse_loss(y.squeeze(), loc.squeeze()).item()
+        alphalambda = p_alphalamba(y.squeeze(), loc.squeeze(), scale).item()
+        self.log('mse/train', mse)
+        self.log('alphalambda/train', alphalambda)
+        self.log('elbo/train', elbo)
         self.log('kl/train', kl)
         self.log('likelihood/train', elbo - kl)
         #return {'loss' : mse}
@@ -336,6 +335,7 @@ class MCMCBnnWrapper(BnnWrapper):
         archi='inception',
         activation='relu',
         optimizer='nadam',
+        out_size=2,
         lr=1e-3,
         device=torch.device('cuda:0'),
         **kwargs

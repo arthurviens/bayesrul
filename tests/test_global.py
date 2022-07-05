@@ -3,7 +3,7 @@ import pytest
 from pathlib import Path
 from bayesrul import __version__
 from bayesrul.utils.lmdb_utils import make_slice
-from bayesrul.utils.plotting import PredSaver
+from bayesrul.utils.plotting import ResultSaver
 
 
 class DangerousOperationError(Exception):
@@ -25,24 +25,21 @@ def test_make_slice():
     assert all([s[i] == true_s[i] for i in range(len(s))])
 
 
-def test_PredSaver():
+def test_ResultSaver():
     try:
         preddict = {'preds': [1,2,3], 'labels': [4,5,6]}
         
         base_log_dir = './tests/'
 
-        predLog = PredSaver(base_log_dir)
+        predLog = ResultSaver(base_log_dir)
         predLog.save(preddict)
 
         retrieved = predLog.load()
         
-        for key in retrieved:
+        for key in retrieved.columns:
             for i in range(len(retrieved[key])):
                 assert preddict[key][i] == retrieved[key][i]
 
-        with pytest.raises(KeyError):
-            predLog.save({'yolo': [1,2], 'random': [3, 4]})
-        
     finally: # Cleaning created file and directory
 
         # Careful rmdir !
@@ -50,5 +47,5 @@ def test_PredSaver():
             raise DangerousOperationError("You are potentially trying to "
                 "remove a directory you would not want to remove")
         else:
-            Path(predLog.path, 'preds.npy').unlink()
+            Path(predLog.path, 'results.parquet').unlink()
             predLog.path.rmdir()

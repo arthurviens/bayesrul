@@ -1,4 +1,3 @@
-
 from pathlib import Path
 
 import torch
@@ -8,20 +7,34 @@ from pytorch_lightning.callbacks import EarlyStopping
 
 from bayesrul.inference.inference import Inference
 from bayesrul.lightning_wrappers.frequentist import DnnWrapper
-from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger, Dotdict, numel
+from bayesrul.utils.miscellaneous import (
+    get_checkpoint, 
+    TBLogger, 
+    Dotdict,
+    enable_dropout,
+    numel,
+)
 from bayesrul.utils.plotting import ResultSaver
 
 
+def assert_dropout(model):
+    """ Verifies that the model contains dropout layers """
+    for m in model.modules():
+        if m.__class__.__name__.startswith('Dropout'):
+            return True
+    return False
 
-class DNN(Inference):
+
+class MCDropout(Inference):
     """
-    Standard frequentist neural networks
+    MC Dropout neural network
     """
 
     def __init__(
         self,
         args,
         data: pl.LightningDataModule,
+        p_dropout: float,
         hyperparams = None,
         GPU = 1,
     ) -> None:    
@@ -37,6 +50,7 @@ class DNN(Inference):
             'bias' : True,
             'lr' : 1e-3,
             'device' : torch.device(f"cuda:{self.GPU}"),
+            'dropout' : p_dropout,
             'out_size' : 1,
         }
             
@@ -45,19 +59,21 @@ class DNN(Inference):
                 hyp[key] = hyperparams[key]
 
         # Merge dicts and make attributes accessible by .
-        self.args = Dotdict({**(args.__dict__), **hyp}) 
+        self.args = Dotdict({**(args.__dict__), **hyp})
 
         self.base_log_dir = Path(args.out_path, "frequentist", args.model_name)
+
+        self.checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
 
         self.logger = TBLogger(
             Path(self.base_log_dir),
             default_hp_metric=False,
         )
 
-
     def _define_model(self):
         self.checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
         if self.checkpoint_file:
+            print("Loading model from checkpoint")
             self.dnn = DnnWrapper.load_from_checkpoint(self.checkpoint_file,
                 map_location=self.args.device)
         else:
@@ -67,6 +83,7 @@ class DNN(Inference):
                 **self.args,
             )
 
+        assert assert_dropout(self.dnn), "MCDropout Model has no dropout layers"
 
     def fit(self, epochs):
         if not hasattr(self, 'dnn'):
@@ -87,13 +104,12 @@ class DNN(Inference):
         )
 
         self.trainer.fit(self.dnn, self.data, ckpt_path=self.checkpoint_file)
-
-
-
     def test(self):
         if not hasattr(self, 'dnn'):
             self._define_model()
 
+        enable_dropout(self.dnn)
+        
         tester = pl.Trainer(
             gpus=[0], 
             log_every_n_steps=10, 
@@ -108,8 +124,10 @@ class DNN(Inference):
 
 
     def epistemic_aleatoric_uncertainty(self):
-        self.dnn.test_preds
         ...
 
     def num_params(self) -> int:
+        if not hasattr(self, 'dnn'):
+            self._define_model()
+
         return numel(self.dnn.net)

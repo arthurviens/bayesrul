@@ -5,7 +5,7 @@ description = ""
 authors = ["Arthur Viens <arthviens@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = ">=3.8,<3.11"
 numpy = "^1.22.3"
 pandas = "^1.4.2"
 scikit-learn = "^1.0.2"

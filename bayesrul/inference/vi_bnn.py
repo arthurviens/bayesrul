@@ -8,16 +8,10 @@ import pytorch_lightning as pl
 from bayesrul.inference.inference import Inference
 from bayesrul.lightning_wrappers.frequentist import DnnPretrainWrapper
 from bayesrul.lightning_wrappers.bayesian import VIBnnWrapper
-from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger
-from bayesrul.utils.plotting import PredSaver, UncertaintySaver
+from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger, Dotdict
+from bayesrul.utils.plotting import ResultSaver
 
 import pyro 
-
-class Dotdict(dict):
-    """dot.notation access to dictionary attributes"""
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
 
 
 class VI_BNN(Inference):
@@ -50,6 +44,7 @@ class VI_BNN(Inference):
                 'num_particles' : 1,
                 'optimizer': 'nadam',
                 'lr' : 1e-3,
+                'out_size': 2,
                 'last_layer': args.last_layer,
                 'pretrain_file' : None,
                 'device' : torch.device(f"cuda:{self.GPU}"),
@@ -59,7 +54,8 @@ class VI_BNN(Inference):
             for key in hyperparams.keys():
                 hyp[key] = hyperparams[key]
 
-        self.args = Dotdict({**(args.__dict__), **hyp}) # Merge dicts
+        # Merge dicts and make attributes accessible by .
+        self.args = Dotdict({**(args.__dict__), **hyp}) 
 
         if self.args.guide == "radial": hyperparams['fit_context'] = 'null'
 
@@ -70,7 +66,6 @@ class VI_BNN(Inference):
             Path(self.base_log_dir),
             default_hp_metric=False,
         )
-
 
     def _define_model(self):
         checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
@@ -91,6 +86,7 @@ class VI_BNN(Inference):
             pre_trainer.fit(pre_net, self.data)
             self.base_log_dir.mkdir(exist_ok=True)
             torch.save(pre_net.net.state_dict(), self.args['pretrain_file'])
+
             
         if checkpoint_file:
             self.bnn = VIBnnWrapper.load_from_checkpoint(checkpoint_file,
@@ -102,9 +98,8 @@ class VI_BNN(Inference):
                 self.data.train_size,
                 **self.args
             )
-    
 
-    def fit(self, epochs):
+    def fit(self, epochs: int):
         self.trainer = pl.Trainer(
             default_root_dir=self.base_log_dir,
             gpus=[self.GPU], 
@@ -131,16 +126,19 @@ class VI_BNN(Inference):
             ) 
         tester.test(self.bnn, self.data, verbose=False)
 
-        predLog = PredSaver(self.base_log_dir)
-        predLog.save(self.bnn.test_preds)
+        self.results = ResultSaver(self.base_log_dir)
+        self.results.save(self.bnn.test_preds)
 
-    def epistemic_aleatoric_uncertainty(self):
+    def epistemic_aleatoric_uncertainty(self, device=None):
+        if device is None:
+            device = self.args.device
+
         dim = 0
-        
+
         n = 0
         pred_loc, predictive_var, epistemic_var, aleatoric_var = [], [], [], []
         for i, (x, y) in enumerate(tqdm(self.data.test_dataloader())):
-            x, y = x.to(self.args.device), y.to(self.args.device)
+            x, y = x.to(device), y.to(device)
             n += len(x)
 
             output = self.bnn.bnn.predict(x, num_predictions=10, aggregate=False)
@@ -169,13 +167,13 @@ class VI_BNN(Inference):
         assert len(epistemic_var) == n, f"Size ({len(epistemic_var)}) of uncertainties should match {n}"
         assert len(aleatoric_var) == n, f"Size ({len(aleatoric_var)}) of uncertainties should match {n}"
 
-        sav = UncertaintySaver(self.base_log_dir)
-        sav.save({
+        self.results.append({ # Automatic save to file
             'unweighted_pred_loc': pred_loc.detach().cpu().numpy(),
             'pred_var': predictive_var.detach().cpu().numpy(),
             'ep_var': epistemic_var.detach().cpu().numpy(),
             'al_var': aleatoric_var.detach().cpu().numpy(),
         })
+        
         
             
 

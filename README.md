@@ -30,17 +30,6 @@ TyXe has to be installed by hand, as it is not on PyPI
 pip install git+https://github.com/TyXe-BDL/TyXe.git
 ```
 
-## Generate dataset lmdb files for CMAPSS
-Make sure to have the CMAPSS dataset at `data/CMAPSSData.zip`
-Launch the script
-```
-python -m bayesrul.cmapss.generate_files
-```
-It will create the necessary parquet and lmdb files used later on. You can tweak the generated datasets in the `bayesrul/cmapss/generate_files.py` parameters. Parquet files are used to create lmdb files but are useless otherwise for now.
-
-You now should have `data/cmapss/lmdb` directory.
-You're all set !
-
 ## Generate dataset lmdb files for N-CMAPSS
 Make sure to have the CMAPSS dataset files at `data/ncmapss/N-CMAPSS_DS02-006.h5` (you can use other subsets by modifying arguments in `bayesful/ncmapss/generate_files.py`)
 
@@ -52,5 +41,7 @@ It will create the necessary parquet and lmdb files used later on. Parquet files
 
 You now should have `data/ncmapss/lmdb` directory, with all that is needed inside.
 
-
-Parts of the code have been borrowed on https://github.com/lbasora/bnnrul
+You can now launch a training 
+```
+python -m bayesrul.ncmapss.train_model --bayesian --archi inception --model-name --guide normal testname
+```
