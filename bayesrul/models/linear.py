@@ -65,9 +65,10 @@ class Linear(nn.Module):
         self.load_state_dict(state_dict)
 
     def forward(self, x):
-        if self.typ == "regression": 
-            x = F.softplus(self.last(self.layers(x.transpose(2, 1))))
+        if self.out_size <= 2: 
+            x = F.softplus(self.last(self.layers(x.unsqueeze(1))))
             x = self.thresh(x)
             return x
-        elif self.typ == "classification": 
+        elif self.out_size > 2: 
             return self.softmax(self.last(self.layers(x.unsqueeze(1))))
+        

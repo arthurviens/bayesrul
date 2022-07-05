@@ -111,7 +111,7 @@ class InceptionModuleReducDim(nn.Module):
 
 class InceptionModel(nn.Module):
     def __init__(self, win_length, n_features, 
-            dropout = 0, activation='relu', bias='True'):
+            dropout = 0, activation='relu', bias='True', out_size=2):
         super().__init__()
 
         if activation == 'relu':
@@ -125,7 +125,7 @@ class InceptionModel(nn.Module):
         else:
             raise ValueError("Unknown activation")
 
-        self.out_size = 2 
+        self.out_size = out_size
 
         self.layers = nn.Sequential(
             InceptionModule(n_features,
@@ -147,14 +147,18 @@ class InceptionModel(nn.Module):
             self.layers.add_module('n-1_dropout', nn.Dropout(dropout))
 
         self.last = nn.Linear(64, self.out_size)
-
         self.thresh = nn.Threshold(1e-9, 1e-9)
+        self.softmax = nn.Softmax(dim=1)
         
-    
+
     def forward(self, x):
-        x = F.softplus(self.last(self.layers(x.transpose(2, 1))))
-        x = self.thresh(x)
-        return x
+        if self.out_size <= 2: 
+            x = F.softplus(self.last(self.layers(x.transpose(2, 1))))
+            x = self.thresh(x)
+            return x
+        elif self.out_size > 2:
+            return self.softmax(self.last(self.layers(x.transpose(2, 1))))
+        
 
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)
@@ -166,7 +170,7 @@ class InceptionModel(nn.Module):
 
 class BigCeption(nn.Module):
     def __init__(self, win_length, n_features, activation='relu', bias='True',
-            dropout=0):
+            dropout=0, out_size=2):
         super().__init__()
         assert n_features == 18, \
             "TODO, Generalize Inception model for other than 18 features"
@@ -182,7 +186,7 @@ class BigCeption(nn.Module):
         else:
             raise ValueError("Unknown activation")
 
-        self.out_size = 2 
+        self.out_size = out_size
 
         self.layers = nn.Sequential(
             InceptionModule(n_features, 27, 27, 27, 27, activation = act, 
@@ -200,11 +204,13 @@ class BigCeption(nn.Module):
         self.last = nn.Linear(64, self.out_size)
         self.thresh = nn.Threshold(1e-9, 1e-9)
         
-    
     def forward(self, x):
-        x = F.softplus(self.last(self.layers(x.transpose(2, 1))))
-        x = self.thresh(x)
-        return x
+        if self.out_size <= 2: 
+            x = F.softplus(self.last(self.layers(x.transpose(2, 1))))
+            x = self.thresh(x)
+            return x
+        elif self.out_size > 2:
+            return self.softmax(self.last(self.layers(x.transpose(2, 1))))
 
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)

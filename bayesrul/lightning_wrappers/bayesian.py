@@ -43,6 +43,7 @@ class BnnWrapper(pl.LightningModule):
         archi='inception',
         activation='relu',
         optimizer='nadam',
+        out_size=2,
         lr=1e-3,
         device=torch.device('cuda:0'),
         **kwargs
@@ -53,16 +54,16 @@ class BnnWrapper(pl.LightningModule):
 
         if archi == "linear":
             self.net = Linear(win_length, n_features, activation=activation,
-                bias=bias, typ='regression').to(device=device)
+                bias=bias, out_size=out_size).to(device=device)
         elif archi == "conv":
             self.net = Conv(win_length, n_features, activation=activation, 
-                bias=bias, typ='regression').to(device=device)
+                bias=bias, out_size=out_size).to(device=device)
         elif archi == "inception":
-            self.net = InceptionModel(win_length, n_features, 
+            self.net = InceptionModel(win_length, n_features, out_size=out_size,
                 activation=activation, bias=bias).to(device=device)
         elif archi == "bigception":
             self.net = BigCeption(win_length, n_features, activation=activation, 
-                bias=bias).to(device=device)
+                out_size=out_size, bias=bias).to(device=device)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
@@ -116,7 +117,7 @@ class BnnWrapper(pl.LightningModule):
     @staticmethod
     def add_model_specific_args(parent_parser):
         """To initialize from checkpoint, without giving init args """
-        parser = parent_parser.add_argument_group("NCMAPSS_VIBnn")
+        parser = parent_parser.add_argument_group("BnnWrapper")
         parser.add_argument("--net", type=str, default="inception")
         return parent_parser
 
@@ -334,6 +335,7 @@ class MCMCBnnWrapper(BnnWrapper):
         archi='inception',
         activation='relu',
         optimizer='nadam',
+        out_size=2,
         lr=1e-3,
         device=torch.device('cuda:0'),
         **kwargs

@@ -19,7 +19,7 @@ class DnnWrapper(pl.LightningModule):
         n_features,
         bias=True,
         archi="linear",
-        typ="regression",
+        out_size=1,
         lr=1e-3,
         weight_decay=1e-3,
         loss='mse',
@@ -32,16 +32,16 @@ class DnnWrapper(pl.LightningModule):
         
         if archi == "linear":
             self.net = Linear(win_length, n_features, activation=activation,
-                dropout=dropout, bias=bias, typ=typ)
+                dropout=dropout, bias=bias, out_size=out_size)
         elif archi == "conv":
             self.net = Conv(win_length, n_features, activation=activation,
-                dropout=dropout, bias=bias, typ=typ)
+                dropout=dropout, bias=bias, out_size=out_size)
         elif archi == "inception":
-            self.net = InceptionModel(win_length, n_features, 
+            self.net = InceptionModel(win_length, n_features, out_size=out_size,
                 dropout=dropout, activation=activation, bias=bias)
         elif archi == "bigception":
             self.net = BigCeption(n_features, activation=activation, 
-                dropout=dropout, bias=bias)
+                dropout=dropout, out_size=out_size, bias=bias)
         else:
             raise RuntimeError(f"Model architecture {archi} not implemented")
 
@@ -68,11 +68,12 @@ class DnnWrapper(pl.LightningModule):
     def _compute_loss(self, batch, phase, return_pred=False): 
         (x, y) = batch
         output = self.net(x)
-        try:
+        if output.shape[1] == 2:
             y_hat = output[:, 0]
-            sd = output[:, 1]
-        except:
-            y_hat = output
+            #scale = output[:, 1]
+        else:
+            y_hat = output.squeeze()
+        
         loss = self.criterion(y_hat, y)        
         
         self.log(f"{self.loss}/{phase}", loss)
@@ -142,7 +143,7 @@ class DnnPretrainWrapper(pl.LightningModule):
         n_features,
         bias=True,
         archi="linear",
-        typ="regression",
+        out_size=2,
         activation='relu',
         lr=1e-3,
         weight_decay=1e-3,
@@ -152,15 +153,15 @@ class DnnPretrainWrapper(pl.LightningModule):
         self.save_hyperparameters()
         if archi == "linear":
             self.net = Linear(win_length, n_features, activation=activation,
-                bias = bias, typ=typ)
+                bias = bias, out_size=out_size)
         elif archi == "conv":
             self.net = Conv(win_length, n_features, activation=activation,
-                bias = bias, typ=typ)
+                bias = bias, out_size=out_size)
         elif archi == "inception":
-            self.net = InceptionModel(win_length, n_features, 
+            self.net = InceptionModel(win_length, n_features, out_size=out_size,
                 activation=activation, bias=bias)
         elif archi == "bigception":
-            self.net = BigCeption(win_length,n_features, 
+            self.net = BigCeption(win_length,n_features, out_size=out_size,
                 activation=activation, bias=bias)
         else:
             raise RuntimeError(f"Model architecture {archi} not implemented")
@@ -214,6 +215,6 @@ class DnnPretrainWrapper(pl.LightningModule):
     @staticmethod
     def add_model_specific_args(parent_parser):
         """To initialize from checkpoint, without giving init args """
-        parser = parent_parser.add_argument_group("NCMAPSSPretrain")
+        parser = parent_parser.add_argument_group("DnnPretrainWrapper")
         parser.add_argument("--net", type=str, default="linear")
         return parent_parser

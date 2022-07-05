@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 class Conv(nn.Module):
     def __init__(self, win_length, n_features, activation='relu',
-                dropout=0, bias=True, typ='regression'):
+                dropout=0, bias=True, out_size=2):
         super().__init__()
         if activation == 'relu':
             act = nn.ReLU
@@ -18,10 +18,7 @@ class Conv(nn.Module):
         else:
             raise ValueError("Unknown activation")
 
-        self.typ = typ
-        if typ == "regression": out_size = 2
-        elif typ == "classification": out_size = 10
-        else: raise ValueError(f"Unknown value for typ : {typ}")
+        self.out_size = out_size
 
         if dropout > 0: 
            self.layers = nn.Sequential(
@@ -66,16 +63,16 @@ class Conv(nn.Module):
         self.load_state_dict(state_dict)
 
     def forward(self, x):
-        if self.typ == "regression": 
+        if self.out_size <= 2: 
             x = F.softplus(self.last(self.layers(x.unsqueeze(1))))
             x = self.thresh(x)
             return x
-        elif self.typ == "classification": 
+        elif self.out_size > 2: 
             return self.softmax(self.last(self.layers(x.unsqueeze(1))))
         
 class Conv2(nn.Module):
     def __init__(self, win_length, n_features, activation='relu',
-                dropout=0, bias=True, typ='regression'):
+                dropout=0, bias=True, out_size=2):
         super().__init__()
         if activation == 'relu':
             act = nn.ReLU
@@ -88,11 +85,7 @@ class Conv2(nn.Module):
         else:
             raise ValueError("Unknown activation")
 
-        self.typ = typ
-        if typ == "regression": self.out_size = 2
-        elif typ == "classification": self.out_size = 10
-        else: raise ValueError(f"Unknown value for typ : {typ}")
-
+        self.out_size = out_size
         
         self.softmax = nn.LogSoftmax(-1)
         if dropout > 0:
@@ -139,11 +132,10 @@ class Conv2(nn.Module):
         self.load_state_dict(state_dict)
 
     def forward(self, x):
-        if self.typ == "regression": 
+        if self.out_size <= 2: 
             x = F.softplus(self.last(self.layers(x.unsqueeze(1))))
             x = self.thresh(x)
             return x
-        elif self.typ == "classification": 
+        elif self.out_size > 2: 
             return self.softmax(self.last(self.layers(x.unsqueeze(1))))
         
-

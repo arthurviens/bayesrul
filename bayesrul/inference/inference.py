@@ -49,6 +49,10 @@ class Inference(ABC):
         ...
 
     @property
+    def _args(self):
+        return(self.args)
+
+    @property
     @abstractmethod
     def num_params(self) -> int:
         ...

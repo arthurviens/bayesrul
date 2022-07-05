@@ -37,6 +37,7 @@ class DNN(Inference):
             'bias' : True,
             'lr' : 1e-3,
             'device' : torch.device(f"cuda:{self.GPU}"),
+            'out_size' : 1,
         }
             
         if hyperparams is not None: # Overriding defaults with arguments

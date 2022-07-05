@@ -51,6 +51,7 @@ class MCDropout(Inference):
             'lr' : 1e-3,
             'device' : torch.device(f"cuda:{self.GPU}"),
             'dropout' : p_dropout,
+            'out_size' : 1,
         }
             
         if hyperparams is not None: # Overriding defaults with arguments
@@ -128,5 +129,5 @@ class MCDropout(Inference):
     def num_params(self) -> int:
         if not hasattr(self, 'dnn'):
             self._define_model()
-            
+
         return numel(self.dnn.net)

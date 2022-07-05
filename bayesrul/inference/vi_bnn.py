@@ -44,6 +44,7 @@ class VI_BNN(Inference):
                 'num_particles' : 1,
                 'optimizer': 'nadam',
                 'lr' : 1e-3,
+                'out_size': 2,
                 'last_layer': args.last_layer,
                 'pretrain_file' : None,
                 'device' : torch.device(f"cuda:{self.GPU}"),
@@ -65,7 +66,6 @@ class VI_BNN(Inference):
             Path(self.base_log_dir),
             default_hp_metric=False,
         )
-
 
     def _define_model(self):
         checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
@@ -98,9 +98,6 @@ class VI_BNN(Inference):
                 self.data.train_size,
                 **self.args
             )
-
-
-    
 
     def fit(self, epochs: int):
         self.trainer = pl.Trainer(
