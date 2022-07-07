@@ -9,7 +9,7 @@ from math import sqrt
 
 # torch.distributions.normal.cdf ?
 def normal_cdf(x, loc, scale):
-    return 0.5 * (1 + torch.erf((x - loc) * scale.reciprocal() / sqrt(2)))
+    return 0.5 * (1 + torch.erf(((x - loc) * scale.reciprocal()) / sqrt(2)))
 
 
 def p_alphalamba(y_true, y_hat, sigma_hat, alpha=0.05, reduction='mean'):

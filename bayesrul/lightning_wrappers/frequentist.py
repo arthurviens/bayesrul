@@ -1,3 +1,4 @@
+from black import out
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
@@ -45,16 +46,20 @@ class DnnWrapper(pl.LightningModule):
         else:
             raise RuntimeError(f"Model architecture {archi} not implemented")
 
-        if (loss == 'mse') or (loss == 'MSE'):
+        if out_size == 2:
+            self.loss = "gaussian_nll"
+            self.criterion = F.gaussian_nll_loss
+        elif (loss == 'mse') or (loss == 'MSE'):
             self.criterion = F.mse_loss
             self.loss = 'mse'
         elif (loss == 'l1') or (loss == 'L1'):
             self.criterion = F.l1_loss
             self.loss = 'l1'
         else:
-            raise RuntimeError(f"Loss {loss} not supported. Choose from"
-                " ['mse', 'l1']")
-                
+            raise RuntimeError(f"Loss {loss} not supported or out_size {out_size}"
+                "not adapted to loss. Choose from ['mse', 'l1'] for out_size=1")
+        
+        self.out_size = out_size
         self.lr = lr
         self.weight_decay = weight_decay
         self.test_preds = {'preds': [], 'labels': []}
@@ -70,43 +75,59 @@ class DnnWrapper(pl.LightningModule):
         output = self.net(x)
         if output.shape[1] == 2:
             y_hat = output[:, 0]
-            #scale = output[:, 1]
+            scale = output[:, 1]
         else:
             y_hat = output.squeeze()
         
-        loss = self.criterion(y_hat, y)        
+        if self.loss == "gaussian_nll":
+            loss = self.criterion(y_hat, y, torch.square(scale))
+        else:
+            loss = self.criterion(y_hat, y)        
         
         self.log(f"{self.loss}/{phase}", loss)
         if return_pred:
-            return loss, y_hat
+            if output.shape[1] == 2:
+                return loss, y_hat, scale
+            else:
+                return loss, y_hat
         else:
             return loss
 
     def training_step(self, batch, batch_idx):
-        return self._compute_loss(batch, "train")
+        if self.out_size == 2:
+            loss, loc, scale = self._compute_loss(batch, "train", return_pred=True)
+            mse = F.mse_loss(loc, batch[1])
+            self.log("mse/train", mse)
+        else:
+            loss = self._compute_loss(batch, "train", return_pred=True)
+        return loss
 
     def validation_step(self, batch, batch_idx):
-        
-        loss = self._compute_loss(batch, "val")
-        if (self.dropout > 0) & self.current_epoch % 5 == 0: # MC-Dropout
+        if (self.dropout > 0) & (self.current_epoch % 5 == 0): # MC-Dropout
             enable_dropout(self.net)
             preds = []
             losses = []
             for i in range(10):
-                loss, pred = self._compute_loss(batch, "test", return_pred=True)
+                loss, pred = self._compute_loss(batch, "val", return_pred=True)
                 preds.append(pred)
                 losses.append(loss)
             loss = torch.stack(losses).mean()
             preds = torch.stack(preds)
             std = preds.std(axis=0)
             preds = preds.mean(axis=0)
-
+            mse = F.mse_loss(preds, batch[1])
+            self.log("mse/val", mse)
+            return {'loss': loss, 'label': batch[1], 'pred': preds, 'std': std} 
+        elif (self.loss == "gaussian_nll") & (self.out_size == 2):
+            loss, pred, std = self._compute_loss(batch, "val", return_pred=True)
+            mse = F.mse_loss(pred, batch[1])
+            self.log("mse/val", mse)
             return {'loss': loss, 'label': batch[1], 'pred': pred, 'std': std} 
         else:
             return {'loss': loss}
 
     def validation_epoch_end(self, outputs) -> None:
-        if (self.dropout > 0) & self.current_epoch % 5 == 0:
+        if ((self.dropout > 0) | (self.out_size == 2)) & self.current_epoch % 5 == 0:
             preds = torch.tensor([])
             labels = torch.tensor([])
             stds = torch.tensor([])
@@ -130,7 +151,6 @@ class DnnWrapper(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         if self.dropout > 0:
             enable_dropout(self.net)
-
             preds = []
             losses = []
             for i in range(100):
@@ -143,6 +163,12 @@ class DnnWrapper(pl.LightningModule):
             std = preds.std(axis=0)
             preds = preds.mean(axis=0)
 
+            mse = F.mse_loss(preds, batch[1])
+            self.log("mse/val", mse)
+            
+            return {'loss': loss, 'label': batch[1], 'pred': preds, 'std': std} 
+        elif (self.out_size == 2):
+            loss, pred, std = self._compute_loss(batch, "test", return_pred=True)
             return {'loss': loss, 'label': batch[1], 'pred': pred, 'std': std} 
         else:
             loss, pred = self._compute_loss(batch, "test", return_pred=True)
@@ -158,13 +184,13 @@ class DnnWrapper(pl.LightningModule):
             for output in outputs:
                 preds = torch.cat([preds, output['pred'].cpu().detach()])
                 labels = torch.cat([labels, output['label'].cpu().detach()])
-                if self.dropout > 0:
+                if (self.dropout > 0) | (self.loss == 'gaussian_nll'):
                     stds = torch.cat([stds, output['std'].cpu().detach()])
 
         self.test_preds['preds'] = preds.numpy()
         self.test_preds['labels'] = labels.numpy()
 
-        if self.dropout > 0:
+        if (self.dropout > 0) | (self.loss == 'gaussian_nll'):
             self.test_preds['stds'] = stds.numpy()
             mpiw = MPIW(
                 stds, 
@@ -319,7 +345,7 @@ class DeepEnsembleWrapper(pl.LightningModule):
         else:
             raise RuntimeError(f"Model architecture {archi} not implemented")
 
-        self.loss = 'nll_loss'
+        self.loss = 'gaussian_nll'
         self.criterion = F.gaussian_nll_loss
         self.lr = lr
         self.weight_decay = weight_decay
@@ -328,6 +354,7 @@ class DeepEnsembleWrapper(pl.LightningModule):
         self.dropout = dropout
         for net in self.nets:
             net.apply(weights_init)
+        self.turn = 0
 
     def forward(self, x): # Non vérifié
         mus = []
@@ -345,7 +372,7 @@ class DeepEnsembleWrapper(pl.LightningModule):
     def _compute_loss(self, batch, phase, return_pred=False): 
         (x, y) = batch
         loc, var = self.forward(x)
-        loss = self.criterion(loc, y, var)        
+        loss = self.criterion(loc, y, var)
         
         self.log(f"{self.loss}/{phase}", loss)
         if return_pred:
@@ -354,10 +381,20 @@ class DeepEnsembleWrapper(pl.LightningModule):
             return loss
 
     def training_step(self, batch, batch_idx):
-        loss, loc, var = self._compute_loss(batch, "train", return_pred=True)
+        """loss, loc, var = self._compute_loss(batch, "train", return_pred=True)
         mse = F.mse_loss(loc, batch[1])
         self.log("mse/train", mse)
+        return loss"""
+        (x, y) = batch
+        loc, var = self.nets[self.turn](x)
+        self.turn = (self.turn + 1) % len(self.nets)
+        
+        loss = self.criterion(loc, y, var)
+        mse = F.mse_loss(loc, y)
+        self.log("mse/train", mse)
+        self.log(f"{self.loss}/train", loss)
         return loss
+
 
     def validation_step(self, batch, batch_idx):
         loss, loc, var = self._compute_loss(batch, "val", return_pred=True)
