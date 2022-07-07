@@ -12,7 +12,6 @@ from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger, Dotdict, nume
 from bayesrul.utils.plotting import ResultSaver
 
 
-
 class DNN(Inference):
     """
     Standard frequentist neural networks
@@ -77,7 +76,7 @@ class DNN(Inference):
 
         self.trainer = pl.Trainer(
             default_root_dir=self.base_log_dir,
-            gpus=[1],
+            gpus=[self.GPU],
             max_epochs=epochs,
             log_every_n_steps=2,
             logger=self.logger,
@@ -95,7 +94,7 @@ class DNN(Inference):
             self._define_model()
 
         tester = pl.Trainer(
-            gpus=[0], 
+            gpus=[self.GPU], 
             log_every_n_steps=10, 
             logger=self.logger, 
             max_epochs=-1
@@ -113,3 +112,12 @@ class DNN(Inference):
 
     def num_params(self) -> int:
         return numel(self.dnn.net)
+
+
+
+class HomoscedsaticDNN(DNN):
+    ...
+
+
+class HeteroscedasticDNN(DNN):
+    ...

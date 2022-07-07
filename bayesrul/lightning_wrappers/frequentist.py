@@ -7,9 +7,9 @@ from bayesrul.models.inception import InceptionModel, BigCeption
 from bayesrul.models.linear import Linear
 from bayesrul.models.conv import Conv
 from bayesrul.utils.miscellaneous import weights_init, enable_dropout
+from bayesrul.utils.metrics import MPIW, PICP, p_alphalamba
 
-
-
+import numpy as np
 
 
 class DnnWrapper(pl.LightningModule):
@@ -86,7 +86,46 @@ class DnnWrapper(pl.LightningModule):
         return self._compute_loss(batch, "train")
 
     def validation_step(self, batch, batch_idx):
-        return self._compute_loss(batch, "val")
+        
+        loss = self._compute_loss(batch, "val")
+        if (self.dropout > 0) & self.current_epoch % 5 == 0: # MC-Dropout
+            enable_dropout(self.net)
+            preds = []
+            losses = []
+            for i in range(10):
+                loss, pred = self._compute_loss(batch, "test", return_pred=True)
+                preds.append(pred)
+                losses.append(loss)
+            loss = torch.stack(losses).mean()
+            preds = torch.stack(preds)
+            std = preds.std(axis=0)
+            preds = preds.mean(axis=0)
+
+            return {'loss': loss, 'label': batch[1], 'pred': pred, 'std': std} 
+        else:
+            return {'loss': loss}
+
+    def validation_epoch_end(self, outputs) -> None:
+        if (self.dropout > 0) & self.current_epoch % 5 == 0:
+            preds = torch.tensor([])
+            labels = torch.tensor([])
+            stds = torch.tensor([])
+            for output in outputs:
+                preds = torch.cat([preds, output['pred'].cpu().detach()])
+                labels = torch.cat([labels, output['label'].cpu().detach()])
+                stds = torch.cat([stds, output['std'].cpu().detach()])
+
+            mpiw = MPIW(
+                preds, labels, normalized=True
+            )
+            picp = PICP(
+                labels, preds, stds
+            )
+            alambda = p_alphalamba(labels, preds, stds)
+            self.log(f"mpiw/val", mpiw)
+            self.log(f"picp/val", picp)
+            self.log(f"alambda/val", alambda)
+
 
     def test_step(self, batch, batch_idx):
         if self.dropout > 0:
@@ -112,14 +151,35 @@ class DnnWrapper(pl.LightningModule):
 
     def test_epoch_end(self, outputs):
         for output in outputs:
-            self.test_preds['preds'].extend(list(
-                output['pred'].flatten().cpu().detach().numpy()))
-            #stds.extend(list(output['std'].cpu().detach().numpy()))
-            self.test_preds['labels'].extend(list(
-                output['label'].cpu().detach().numpy()))
-            if self.dropout > 0:
-                self.test_preds['stds'].extend(list(
-                    output['std'].cpu().detach().numpy()))
+
+            preds = torch.tensor([])
+            labels = torch.tensor([])
+            stds = torch.tensor([])
+            for output in outputs:
+                preds = torch.cat([preds, output['pred'].cpu().detach()])
+                labels = torch.cat([labels, output['label'].cpu().detach()])
+                if self.dropout > 0:
+                    stds = torch.cat([stds, output['std'].cpu().detach()])
+
+        self.test_preds['preds'] = preds.numpy()
+        self.test_preds['labels'] = labels.numpy()
+
+        if self.dropout > 0:
+            self.test_preds['stds'] = stds.numpy()
+            mpiw = MPIW(
+                stds, 
+                labels, 
+                normalized=True
+            )
+            picp = PICP(
+                labels,
+                preds,
+                stds,
+            )
+            alambda = p_alphalamba(labels, preds, stds)
+            self.log(f"mpiw/test", mpiw)
+            self.log(f"picp/test", picp)
+            self.log(f"alambda/test", alambda)
         
 
     def configure_optimizers(self):
@@ -216,5 +276,167 @@ class DnnPretrainWrapper(pl.LightningModule):
     def add_model_specific_args(parent_parser):
         """To initialize from checkpoint, without giving init args """
         parser = parent_parser.add_argument_group("DnnPretrainWrapper")
+        parser.add_argument("--net", type=str, default="linear")
+        return parent_parser
+
+
+
+class DeepEnsembleWrapper(pl.LightningModule):
+    def __init__(
+        self,
+        win_length,
+        n_features,
+        n_models, 
+        bias=True,
+        archi="linear",
+        out_size=2,
+        lr=1e-3,
+        weight_decay=1e-3,
+        activation='relu',
+        dropout=0.1,
+        device=torch.device('cuda:0'),
+        **kwargs
+    ):
+        super().__init__()
+        self.save_hyperparameters()
+        
+        if archi == "linear":
+            self.nets = [Linear(win_length, n_features, activation=activation,
+                dropout=dropout, bias=bias, out_size=out_size).to(device)
+                for i in range(n_models)]
+        elif archi == "conv":
+            self.nets = [Conv(win_length, n_features, activation=activation,
+                dropout=dropout, bias=bias, out_size=out_size).to(device)
+                for i in range(n_models)]
+        elif archi == "inception":
+            self.nets = [InceptionModel(win_length, n_features, out_size=out_size,
+                dropout=dropout, activation=activation, bias=bias).to(device)
+                for i in range(n_models)]
+        elif archi == "bigception":
+            self.nets = [BigCeption(n_features, activation=activation, dropout=dropout, 
+                out_size=out_size, bias=bias).to(device)
+                for i in range(n_models)]
+        else:
+            raise RuntimeError(f"Model architecture {archi} not implemented")
+
+        self.loss = 'nll_loss'
+        self.criterion = F.gaussian_nll_loss
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self.test_preds = {'preds': [], 'labels': []}
+        if dropout > 0: self.test_preds['stds'] = []
+        self.dropout = dropout
+        for net in self.nets:
+            net.apply(weights_init)
+
+    def forward(self, x): # Non vérifié
+        mus = []
+        sigmas = []
+        for net in self.nets:
+            out = net(x)
+            mus.append(out[:, 0])
+            sigmas.append(out[:, 1])
+        loc = torch.stack(mus)
+        scale = torch.stack(sigmas)
+        # Gaussian mixture formula
+        var = (torch.square(scale) + torch.square(loc)).mean(0) - torch.square(loc.mean(0))
+        return loc.mean(0), var
+
+    def _compute_loss(self, batch, phase, return_pred=False): 
+        (x, y) = batch
+        loc, var = self.forward(x)
+        loss = self.criterion(loc, y, var)        
+        
+        self.log(f"{self.loss}/{phase}", loss)
+        if return_pred:
+            return loss, loc, var
+        else:
+            return loss
+
+    def training_step(self, batch, batch_idx):
+        loss, loc, var = self._compute_loss(batch, "train", return_pred=True)
+        mse = F.mse_loss(loc, batch[1])
+        self.log("mse/train", mse)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        loss, loc, var = self._compute_loss(batch, "val", return_pred=True)
+        mse = F.mse_loss(loc, batch[1])
+        self.log("mse/val", mse)
+        return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)} 
+        
+    def validation_epoch_end(self, outputs) -> None:
+        if (self.dropout > 0) & self.current_epoch % 5 == 0:
+            preds = torch.tensor([])
+            labels = torch.tensor([])
+            stds = torch.tensor([])
+            for output in outputs:
+                preds = torch.cat([preds, output['pred'].cpu().detach()])
+                labels = torch.cat([labels, output['label'].cpu().detach()])
+                stds = torch.cat([stds, output['std'].cpu().detach()])
+
+            mpiw = MPIW(
+                preds, labels, normalized=True
+            )
+            picp = PICP(
+                labels, preds, stds
+            )
+            alambda = p_alphalamba(labels, preds, stds)
+            self.log(f"mpiw/val", mpiw)
+            self.log(f"picp/val", picp)
+            self.log(f"alambda/val", alambda)
+
+    def test_step(self, batch, batch_idx):
+        loss, loc, var = self._compute_loss(batch, "test", return_pred=True)
+        mse = F.mse_loss(loc, batch[1])
+        self.log("mse/test", mse)
+        return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)} 
+
+    def test_epoch_end(self, outputs):
+        for output in outputs:
+
+            preds = torch.tensor([])
+            labels = torch.tensor([])
+            stds = torch.tensor([])
+            for output in outputs:
+                preds = torch.cat([preds, output['pred'].cpu().detach()])
+                labels = torch.cat([labels, output['label'].cpu().detach()])
+                if self.dropout > 0:
+                    stds = torch.cat([stds, output['std'].cpu().detach()])
+
+        self.test_preds['preds'] = preds.numpy()
+        self.test_preds['labels'] = labels.numpy()
+
+        if self.dropout > 0:
+            self.test_preds['stds'] = stds.numpy()
+            mpiw = MPIW(
+                stds, 
+                labels, 
+                normalized=True
+            )
+            picp = PICP(
+                labels,
+                preds,
+                stds,
+            )
+            alambda = p_alphalamba(labels, preds, stds)
+            self.log(f"mpiw/test", mpiw)
+            self.log(f"picp/test", picp)
+            self.log(f"alambda/test", alambda)
+        
+
+    def configure_optimizers(self):
+        params = []
+        for net in self.nets:
+            params.extend(list(net.parameters()))
+        optimizer = torch.optim.Adam(
+            params, lr=self.lr, weight_decay=self.weight_decay
+        )
+        return optimizer
+
+    @staticmethod
+    def add_model_specific_args(parent_parser):
+        """To initialize from checkpoint, without giving init args """
+        parser = parent_parser.add_argument_group("DnnWrapper")
         parser.add_argument("--net", type=str, default="linear")
         return parent_parser

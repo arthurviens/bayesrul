@@ -1,12 +1,13 @@
 from pathlib import Path
 
 import torch
+import numpy as np
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping
 
 from bayesrul.inference.inference import Inference
-from bayesrul.lightning_wrappers.frequentist import DnnWrapper
+from bayesrul.lightning_wrappers.frequentist import DeepEnsembleWrapper
 from bayesrul.utils.miscellaneous import (
     get_checkpoint, 
     TBLogger, 
@@ -17,41 +18,36 @@ from bayesrul.utils.miscellaneous import (
 from bayesrul.utils.plotting import ResultSaver
 
 
-def assert_dropout(model):
-    """ Verifies that the model contains dropout layers """
-    for m in model.modules():
-        if m.__class__.__name__.startswith('Dropout'):
-            return True
-    return False
-
-
-class MCDropout(Inference):
+class DeepEnsemble(Inference):
     """
-    MC Dropout neural network
+    Deep Ensemble neural networks
     """
 
     def __init__(
         self,
         args,
         data: pl.LightningDataModule,
-        p_dropout: float,
+        n_models: int,
         hyperparams = None,
         GPU = 1,
     ) -> None:    
-        self.name = f"dnn_{args.model_name}_{args.archi}"
+        self.name = f"deepEnsemble{n_models}_{args.model_name}_{args.archi}"
         assert isinstance(GPU, int), \
             f"GPU argument should be an int, not {type(GPU)}"
+        assert isinstance(n_models, int), \
+            f"n_models argument should be an int, not {type(n_models)}"
         assert isinstance(data, pl.LightningDataModule), \
             f"data argument should be a LightningDataModule, not {type(data)}"
         self.data = data
         self.GPU = GPU
+        self.n_models = n_models
 
         hyp = {
             'bias' : True,
             'lr' : 1e-3,
             'device' : torch.device(f"cuda:{self.GPU}"),
-            'dropout' : p_dropout,
-            'out_size' : 1,
+            'dropout' : 0.1,
+            'out_size' : 2,
         }
             
         if hyperparams is not None: # Overriding defaults with arguments
@@ -74,16 +70,16 @@ class MCDropout(Inference):
         self.checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
         if self.checkpoint_file:
             print("Loading model from checkpoint")
-            self.dnn = DnnWrapper.load_from_checkpoint(self.checkpoint_file,
+            self.dnn = DeepEnsembleWrapper.load_from_checkpoint(self.checkpoint_file,
                 map_location=self.args.device)
         else:
-            self.dnn = DnnWrapper(
+            self.dnn = DeepEnsembleWrapper(
                 self.data.win_length, 
                 self.data.n_features, 
+                self.n_models,
                 **self.args,
             )
 
-        assert assert_dropout(self.dnn), "MCDropout Model has no dropout layers"
 
     def fit(self, epochs):
         if not hasattr(self, 'dnn'):
@@ -104,12 +100,12 @@ class MCDropout(Inference):
         )
 
         self.trainer.fit(self.dnn, self.data, ckpt_path=self.checkpoint_file)
+
+
     def test(self):
         if not hasattr(self, 'dnn'):
             self._define_model()
 
-        enable_dropout(self.dnn)
-        
         tester = pl.Trainer(
             gpus=[self.GPU], 
             log_every_n_steps=10, 
@@ -130,4 +126,4 @@ class MCDropout(Inference):
         if not hasattr(self, 'dnn'):
             self._define_model()
 
-        return numel(self.dnn.net)
+        return np.sum([numel(x) for x in self.dnn.nets])

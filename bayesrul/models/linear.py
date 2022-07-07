@@ -7,7 +7,7 @@ import torch.nn.functional as F
 # (Just model examples to be assessed and modified according to our needs)
 class Linear(nn.Module):
     def __init__(self, win_length, n_features, activation='relu', 
-                dropout_freq=0, bias=True, typ="regression"):
+                dropout=0, bias=True, out_size=1):
         super().__init__()
         if activation == 'relu':
             act = nn.ReLU
@@ -20,25 +20,22 @@ class Linear(nn.Module):
         else:
             raise ValueError("Unknown activation")
 
-        self.typ = typ
-        if typ == "regression": out_size = 2
-        elif typ == "classification": out_size = 10
-        else: raise ValueError(f"Unknown value for typ : {typ}")
+        self.out_size = out_size
 
-        if dropout_freq > 0 :
+        if dropout > 0 :
             self.layers = nn.Sequential(
                 nn.Flatten(),
                 nn.Linear(win_length * n_features, 256, bias=bias),
-                nn.Dropout(p=dropout_freq),
+                nn.Dropout(p=dropout),
                 act(),
                 nn.Linear(256, 128, bias=bias),
-                nn.Dropout(p=dropout_freq),
+                nn.Dropout(p=dropout),
                 act(),
                 nn.Linear(128, 128, bias=bias),
-                nn.Dropout(p=dropout_freq),
+                nn.Dropout(p=dropout),
                 act(),
                 nn.Linear(128, 32, bias=bias),
-                nn.Dropout(p=dropout_freq),
+                nn.Dropout(p=dropout),
                 act(),
             )
         else:

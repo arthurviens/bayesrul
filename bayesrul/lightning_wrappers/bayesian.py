@@ -8,7 +8,7 @@ from bayesrul.models.inception import InceptionModel, BigCeption
 from bayesrul.models.linear import Linear
 from bayesrul.models.conv import Conv
 from bayesrul.utils.radial import AutoRadial
-from bayesrul.utils.metrics import p_alphalamba
+from bayesrul.utils.metrics import p_alphalamba, MPIW, PICP
 from tyxe.bnn import VariationalBNN
 from torch.functional import F
 
@@ -203,7 +203,7 @@ class VIBnnWrapper(BnnWrapper):
             dataset_size, positive_scale=False #scale=likelihood_scale
         )
         if pretrain_file is not None:
-            print("Initializing weight distributions from pretrained net")
+            print("Resuming training...")
             self.net.load(pretrain_file, map_location=device)
             
             guide_kwargs['init_loc_fn']=tyxe.guides.PretrainedInitializer.from_net(self.net)
@@ -242,18 +242,25 @@ class VIBnnWrapper(BnnWrapper):
         with self.fit_ctxt():
             output = self.bnn.predict(x, num_predictions=10)
             if isinstance(output, tuple):
-                m, sd = output
+                loc, scale = output
             else:
                 output = output.squeeze()
-                m, sd = output[:, 0], output[:, 1]
+                loc, scale = output[:, 0], output[:, 1]
         
-        mse = F.mse_loss(y.squeeze(), m.squeeze())
+        mse = F.mse_loss(y.squeeze(), loc)
+        alambda = p_alphalamba(y.squeeze(), loc, scale).item()
+        picp = PICP(y.squeeze(), loc, scale)
+        mpiw = MPIW(scale, y.squeeze())
+
         self.log("mse/test", mse)
+        self.log('alambda/test', alambda)
+        self.log('mpiw/test', mpiw)
+        self.log('picp/test', picp)
 
         try:
-            return {"loss": mse, "label": batch[1], "pred": m.squeeze(), "std": sd}
+            return {"loss": mse, "label": batch[1], "pred": loc.squeeze(), "std": scale}
         except NameError:
-            return {"loss": mse, "label": batch[1], "pred": m.squeeze()}
+            return {"loss": mse, "label": batch[1], "pred": loc.squeeze()}
 
 
     def validation_step(self, batch, batch_idx):
@@ -276,14 +283,18 @@ class VIBnnWrapper(BnnWrapper):
                 loc, scale = output[:, 0], output[:, 1]
             kl = self.svi_no_obs.evaluate_loss(x)
         
-        mse = F.mse_loss(y.squeeze(), loc.squeeze())
-        alphalambda = p_alphalamba(y.squeeze(), loc.squeeze(), scale).item()
+        mse = F.mse_loss(y.squeeze(), loc)
+        alambda = p_alphalamba(y.squeeze(), loc, scale).item()
+        picp = PICP(y.squeeze(), loc, scale)
+        mpiw = MPIW(scale, y.squeeze())
 
         self.log('elbo/val', elbo)
         self.log('mse/val', mse)
-        self.log('alphalambda/val', alphalambda)
         self.log('kl/val', kl)
         self.log('likelihood/val', elbo - kl)
+        self.log('alambda/val', alambda)
+        self.log('mpiw/val', mpiw)
+        self.log('picp/val', picp)
         #return {'loss' : mse}
 
 
@@ -313,9 +324,7 @@ class VIBnnWrapper(BnnWrapper):
                                     optim_step_progress.increment_completed()
         
         mse = F.mse_loss(y.squeeze(), loc.squeeze()).item()
-        alphalambda = p_alphalamba(y.squeeze(), loc.squeeze(), scale).item()
         self.log('mse/train', mse)
-        self.log('alphalambda/train', alphalambda)
         self.log('elbo/train', elbo)
         self.log('kl/train', kl)
         self.log('likelihood/train', elbo - kl)
