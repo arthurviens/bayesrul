@@ -13,6 +13,7 @@ from bayesrul.utils.plotting import ResultSaver
 
 import pyro 
 
+DEBUG=True
 
 class VI_BNN(Inference):
     """
@@ -56,6 +57,7 @@ class VI_BNN(Inference):
 
         # Merge dicts and make attributes accessible by .
         self.args = Dotdict({**(args.__dict__), **hyp}) 
+        if DEBUG: print(f"Training parameters : {self.args}")
 
         if self.args.guide == "radial": hyperparams['fit_context'] = 'null'
 

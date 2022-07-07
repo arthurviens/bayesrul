@@ -29,6 +29,7 @@ optuna-dashboard = "^0.6.4"
 plotly = "^5.8.0"
 torchinfo = "^1.6.6"
 seaborn = "^0.11.2"
+altair = "^4.2.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
