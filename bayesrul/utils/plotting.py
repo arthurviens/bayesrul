@@ -1,10 +1,10 @@
 from pathlib import Path
-from bayesian_torch.layers.variational_layers import LinearReparameterization
 import numpy as np
 import pandas as pd 
 import matplotlib.pyplot as plt
 import seaborn as sns
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
+from bayesrul.utils.post_process import findNewRul
 
 from abc import ABC, abstractmethod
 from typing import List, Union, Dict
@@ -87,18 +87,6 @@ def plot_rul_pred(out, std=False):
     return fig, ax
 
 
-def findNewRul(arr):
-    maxrul = np.inf
-    indexes = [0]
-    for i, val in enumerate(arr):
-        if val > maxrul:
-            indexes.append(i)
-            maxrul = val 
-        else:
-            maxrul = val
-    return indexes
-
-
 def plot_one_rul_pred(out, idx, std=False, fig=None):
     preds = out['preds']
     labels = out['labels']
@@ -163,6 +151,7 @@ def plot_one_rul_pred(out, idx, std=False, fig=None):
 
 
 def plot_uncertainty(preds, unc, idx):
+    raise RuntimeError("Deprecated")
     pred_var = unc['pred_var']
     ep_var = unc['ep_var']
     al_var = unc['al_var']
@@ -266,9 +255,3 @@ def plot_param_distribution(dnn):
     axes[1].title.set_text(f"Biases distribution $\mu$ = {round(b_mu, 5)}, $\sigma$ = {round(b_sigma, 5)}")
     
 
-
-def get_mus_rhos(m, mu, rho):
-    if isinstance(m, LinearReparameterization):
-        mu.extend(m.mu_weight.flatten().detach().cpu().numpy().tolist())
-        rho.extend(torch.log1p(torch.exp(m.rho_weight))\
-            .flatten().detach().cpu().numpy().tolist())

@@ -3,7 +3,7 @@ import pandas as pd
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
 
 
-def findNewRul(arr) -> np.array:
+def findNewRul(arr: np.array) -> np.array:
     """ Finds the indexes to separate the different engines in test set.
     As test set is not shuffled, RUL values for each engine is monotonically 
     decreasing. If it jumps from 0 to x > 0, it means it is a new engine.
@@ -32,7 +32,7 @@ def findNewRul(arr) -> np.array:
     return indexes
 
 
-def addFlightHours(df, skip_obs, win_size, win_step):
+def addFlightHours(df:pd.DataFrame, skip_obs:int, win_size:int ,win_step:int):
     """ Adds flight hours measure to the test results
 
     Parameters
@@ -78,7 +78,7 @@ def addFlightHours(df, skip_obs, win_size, win_step):
             lambda x: (
                 ((x - x.min())          # Start at index 0 by engine   
                 / (x.max() - x.min()))  # Divide by number of steps (0 -> 1)
-                * skip_obs              
+                * skip_obs              # Multiplied by a factor (total size)
                 * (win_size + x.count() - 1)
                 * win_step              
                 / (60 * 60)             # To have hours and not seconds
@@ -89,7 +89,7 @@ def addFlightHours(df, skip_obs, win_size, win_step):
     return df.drop(columns=['index'])
 
 
-def addTestFlightInfo(df, path = 'data/ncmapss/'):
+def addTestFlightInfo(df: pd.DataFrame, path:str = 'data/ncmapss/'):
     """ Adds flight info to the test results
 
     Parameters
@@ -119,6 +119,7 @@ def addTestFlightInfo(df, path = 'data/ncmapss/'):
         ds_id = pd.concat([ds_id, pd.Series(ds.detach().flatten())])
         traj_id = pd.concat([traj_id, pd.Series(traj.detach().flatten())])
         win_id = pd.concat([win_id, pd.Series(win.detach().flatten())])
+    
     added_info = pd.concat([ds_id, traj_id, win_id], axis=1)\
         .rename(columns={0: 'ds_id', 1: 'unit_id', 2: 'win_id'})\
         .reset_index(drop=True)

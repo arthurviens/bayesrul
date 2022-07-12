@@ -1,3 +1,4 @@
+from audioop import rms
 from black import out
 import pytorch_lightning as pl
 import torch
@@ -8,7 +9,7 @@ from bayesrul.models.inception import InceptionModel, BigCeption
 from bayesrul.models.linear import Linear
 from bayesrul.models.conv import Conv
 from bayesrul.utils.miscellaneous import weights_init, enable_dropout
-from bayesrul.utils.metrics import MPIW, PICP, p_alphalamba
+from bayesrul.utils.metrics import MPIW, PICP, p_alphalamba, rms_calibration_error
 
 import numpy as np
 
@@ -97,9 +98,11 @@ class DnnWrapper(pl.LightningModule):
         if self.out_size == 2:
             loss, loc, scale = self._compute_loss(batch, "train", return_pred=True)
             mse = F.mse_loss(loc, batch[1])
+            rmsce = rms_calibration_error(loc, scale, batch[1])
             self.log("mse/train", mse)
+            self.log("rmsce/train", rmsce)
         else:
-            loss = self._compute_loss(batch, "train", return_pred=True)
+            loss = self._compute_loss(batch, "train", return_pred=False)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -120,8 +123,6 @@ class DnnWrapper(pl.LightningModule):
             return {'loss': loss, 'label': batch[1], 'pred': preds, 'std': std} 
         elif (self.loss == "gaussian_nll") & (self.out_size == 2):
             loss, pred, std = self._compute_loss(batch, "val", return_pred=True)
-            mse = F.mse_loss(pred, batch[1])
-            self.log("mse/val", mse)
             return {'loss': loss, 'label': batch[1], 'pred': pred, 'std': std} 
         else:
             return {'loss': loss}
@@ -143,6 +144,10 @@ class DnnWrapper(pl.LightningModule):
                 labels, preds, stds
             )
             alambda = p_alphalamba(labels, preds, stds)
+            mse = F.mse_loss(preds, labels)
+            rmsce = rms_calibration_error(preds, stds, labels)
+            self.log("mse/val", mse)
+            self.log("rmsce/val", rmsce)
             self.log(f"mpiw/val", mpiw)
             self.log(f"picp/val", picp)
             self.log(f"alambda/val", alambda)
@@ -162,9 +167,6 @@ class DnnWrapper(pl.LightningModule):
             preds = torch.stack(preds)
             std = preds.std(axis=0)
             preds = preds.mean(axis=0)
-
-            mse = F.mse_loss(preds, batch[1])
-            self.log("mse/val", mse)
             
             return {'loss': loss, 'label': batch[1], 'pred': preds, 'std': std} 
         elif (self.out_size == 2):
@@ -203,6 +205,10 @@ class DnnWrapper(pl.LightningModule):
                 stds,
             )
             alambda = p_alphalamba(labels, preds, stds)
+            mse = F.mse_loss(preds, labels)
+            rmsce = rms_calibration_error(preds, stds, labels)
+            self.log("mse/test", mse)
+            self.log("rmsce/test", rmsce)
             self.log(f"mpiw/test", mpiw)
             self.log(f"picp/test", picp)
             self.log(f"alambda/test", alambda)
@@ -369,6 +375,11 @@ class DeepEnsembleWrapper(pl.LightningModule):
         var = (torch.square(scale) + torch.square(loc)).mean(0) - torch.square(loc.mean(0))
         return loc.mean(0), var
 
+    def forward_one(self, x):
+        self.turn = (self.turn + 1) % len(self.nets)
+        out = self.nets[self.turn](x)
+        return out[:, 0], out[:, 1]
+
     def _compute_loss(self, batch, phase, return_pred=False): 
         (x, y) = batch
         loc, var = self.forward(x)
@@ -386,21 +397,21 @@ class DeepEnsembleWrapper(pl.LightningModule):
         self.log("mse/train", mse)
         return loss"""
         (x, y) = batch
-        loc, var = self.nets[self.turn](x)
-        self.turn = (self.turn + 1) % len(self.nets)
+        loc, var = self.forward_one(x)
         
         loss = self.criterion(loc, y, var)
         mse = F.mse_loss(loc, y)
+        rmsce = rms_calibration_error(loc, var.sqrt(), y)
         self.log("mse/train", mse)
+        self.log("rmsce/train", rmsce)
         self.log(f"{self.loss}/train", loss)
         return loss
 
 
     def validation_step(self, batch, batch_idx):
         loss, loc, var = self._compute_loss(batch, "val", return_pred=True)
-        mse = F.mse_loss(loc, batch[1])
-        self.log("mse/val", mse)
         return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)} 
+
         
     def validation_epoch_end(self, outputs) -> None:
         if (self.dropout > 0) & self.current_epoch % 5 == 0:
@@ -419,14 +430,16 @@ class DeepEnsembleWrapper(pl.LightningModule):
                 labels, preds, stds
             )
             alambda = p_alphalamba(labels, preds, stds)
+            mse = F.mse_loss(preds, labels)
+            rmsce = rms_calibration_error(preds, stds, labels)
+            self.log("mse/val", mse)
+            self.log("rmsce/val", rmsce)
             self.log(f"mpiw/val", mpiw)
             self.log(f"picp/val", picp)
             self.log(f"alambda/val", alambda)
 
     def test_step(self, batch, batch_idx):
         loss, loc, var = self._compute_loss(batch, "test", return_pred=True)
-        mse = F.mse_loss(loc, batch[1])
-        self.log("mse/test", mse)
         return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)} 
 
     def test_epoch_end(self, outputs):
@@ -457,6 +470,10 @@ class DeepEnsembleWrapper(pl.LightningModule):
                 stds,
             )
             alambda = p_alphalamba(labels, preds, stds)
+            mse = F.mse_loss(preds, labels)
+            rmsce = rms_calibration_error(preds, stds, labels)
+            self.log("rmsce/test", rmsce)
+            self.log("mse/test", mse)
             self.log(f"mpiw/test", mpiw)
             self.log(f"picp/test", picp)
             self.log(f"alambda/test", alambda)

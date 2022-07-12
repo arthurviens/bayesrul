@@ -8,7 +8,7 @@ from bayesrul.models.inception import InceptionModel, BigCeption
 from bayesrul.models.linear import Linear
 from bayesrul.models.conv import Conv
 from bayesrul.utils.radial import AutoRadial
-from bayesrul.utils.metrics import p_alphalamba, MPIW, PICP
+from bayesrul.utils.metrics import p_alphalamba, MPIW, PICP, rms_calibration_error
 from tyxe.bnn import VariationalBNN
 from torch.functional import F
 
@@ -140,7 +140,7 @@ class VIBnnWrapper(BnnWrapper):
         likelihood_scale=3,
         q_scale=0.01,
         fit_context="flipout",
-        guide_base="normal",
+        guide="normal",
         num_particles=1,
         pretrain_file=None,
         last_layer=False,
@@ -168,16 +168,18 @@ class VIBnnWrapper(BnnWrapper):
             self.fit_ctxt = contextlib.nullcontext
 
         guide_kwargs = {'init_scale': q_scale}
-        if guide_base == 'normal':
+        if guide == 'normal':
             guide_base = tyxe.guides.AutoNormal
-        elif guide_base == 'radial':
+        elif guide == 'radial':
             guide_base = AutoRadial
             closed_form_kl = False
             print("Using Radial Guide")
             self.fit_ctxt = contextlib.nullcontext
-        elif guide_base == 'lowrank':
+        elif guide == 'lowrank':
             guide_base = ag.AutoLowRankMultivariateNormal
-            guide_kwargs['rank'] = 4
+            guide_kwargs['rank'] = 10
+            print("Using LowRank Guide")
+            self.fit_ctxt = contextlib.nullcontext
 
         else: 
             raise RuntimeError("Guide unknown. Choose from 'normal', 'radial', 'lowrank'.")
@@ -251,11 +253,13 @@ class VIBnnWrapper(BnnWrapper):
         alambda = p_alphalamba(y.squeeze(), loc, scale).item()
         picp = PICP(y.squeeze(), loc, scale)
         mpiw = MPIW(scale, y.squeeze())
+        rmsce = rms_calibration_error(loc, scale, y.squeeze())
 
         self.log("mse/test", mse)
         self.log('alambda/test', alambda)
         self.log('mpiw/test', mpiw)
         self.log('picp/test', picp)
+        self.log('rmsce/test', rmsce)
 
         try:
             return {"loss": mse, "label": batch[1], "pred": loc.squeeze(), "std": scale}
@@ -287,6 +291,7 @@ class VIBnnWrapper(BnnWrapper):
         alambda = p_alphalamba(y.squeeze(), loc, scale).item()
         picp = PICP(y.squeeze(), loc, scale)
         mpiw = MPIW(scale, y.squeeze())
+        rmsce = rms_calibration_error(loc, scale, y.squeeze())
 
         self.log('elbo/val', elbo)
         self.log('mse/val', mse)
@@ -295,6 +300,7 @@ class VIBnnWrapper(BnnWrapper):
         self.log('alambda/val', alambda)
         self.log('mpiw/val', mpiw)
         self.log('picp/val', picp)
+        self.log('rmsce/val', rmsce)
         #return {'loss' : mse}
 
 
@@ -324,10 +330,12 @@ class VIBnnWrapper(BnnWrapper):
                                     optim_step_progress.increment_completed()
         
         mse = F.mse_loss(y.squeeze(), loc.squeeze()).item()
+        rmsce = rms_calibration_error(loc, scale, y.squeeze())
         self.log('mse/train', mse)
         self.log('elbo/train', elbo)
         self.log('kl/train', kl)
         self.log('likelihood/train', elbo - kl)
+        self.log('rmsce/train', rmsce)
         #return {'loss' : mse}
 
 
