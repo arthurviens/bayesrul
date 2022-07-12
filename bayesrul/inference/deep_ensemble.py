@@ -30,6 +30,7 @@ class DeepEnsemble(Inference):
         n_models: int,
         hyperparams = None,
         GPU = 1,
+        studying = False,
     ) -> None:    
         self.name = f"deepEnsemble{n_models}_{args.model_name}_{args.archi}"
         assert isinstance(GPU, int), \
@@ -57,7 +58,8 @@ class DeepEnsemble(Inference):
         # Merge dicts and make attributes accessible by .
         self.args = Dotdict({**(args.__dict__), **hyp})
 
-        self.base_log_dir = Path(args.out_path, "frequentist", args.model_name)
+        directory = "studies" if studying else "frequentist"
+        self.base_log_dir = Path(args.out_path, directory, args.model_name)
 
         self.checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
 
@@ -81,7 +83,7 @@ class DeepEnsemble(Inference):
             )
 
 
-    def fit(self, epochs):
+    def fit(self, epochs, monitors=None):
         if not hasattr(self, 'dnn'):
             self._define_model()
 

@@ -26,8 +26,9 @@ class VI_BNN(Inference):
         data: pl.LightningDataModule,
         hyperparams = None,
         GPU = 1,
+        studying = False,
     ) -> None:
-        self.name = f"vi_{args.model_name}_{args.archi}_{args.guide}"
+        self.name = f"vi_{args.model_name}_{args.archi}"
         assert isinstance(GPU, int), \
             f"GPU argument should be an int, not {type(GPU)}"
         assert isinstance(data, pl.LightningDataModule), \
@@ -46,8 +47,9 @@ class VI_BNN(Inference):
                 'optimizer': 'nadam',
                 'lr' : 1e-3,
                 'out_size': 2,
-                'last_layer': args.last_layer,
-                'pretrain_file' : None,
+                'last_layer': False,
+                'pretrain': 0,
+                'pretrain_file': None,
                 'device' : torch.device(f"cuda:{self.GPU}"),
             }
             
@@ -61,7 +63,8 @@ class VI_BNN(Inference):
 
         if self.args.guide == "radial": hyperparams['fit_context'] = 'null'
 
-        self.base_log_dir = Path(args.out_path, "bayesian", args.model_name)
+        directory = "studies" if studying else "bayesian"
+        self.base_log_dir = Path(args.out_path, directory, args.model_name)
         self.checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
     
         self.logger = TBLogger(
@@ -101,7 +104,7 @@ class VI_BNN(Inference):
                 **self.args
             )
 
-    def fit(self, epochs: int):
+    def fit(self, epochs: int, monitors=None):
         self.trainer = pl.Trainer(
             default_root_dir=self.base_log_dir,
             gpus=[self.GPU], 
@@ -115,8 +118,11 @@ class VI_BNN(Inference):
         
         if epochs > 0:
             self.trainer.fit(self.bnn, self.data)
+            return [self.trainer.callback_metrics[monitor] for monitor in monitors\
+                if monitors is not None]
         else:
             raise RuntimeError(f"Cannot fit model for {epochs} epochs.")
+
 
     def test(self):
 

@@ -126,6 +126,7 @@ class HeteroscedasticDNN(Inference):
         data: pl.LightningDataModule,
         hyperparams = None,
         GPU = 1,
+        studying = False,
     ) -> None:    
         self.name = f"dnn_{args.model_name}_{args.archi}"
         assert isinstance(GPU, int), \
@@ -151,7 +152,8 @@ class HeteroscedasticDNN(Inference):
         self.args = Dotdict({**(args.__dict__), **hyp}) 
         self.args.out_size = 2
 
-        self.base_log_dir = Path(args.out_path, "frequentist", args.model_name)
+        directory = "studies" if studying else "frequentist"
+        self.base_log_dir = Path(args.out_path, directory, args.model_name)
 
         self.logger = TBLogger(
             Path(self.base_log_dir),
@@ -172,7 +174,7 @@ class HeteroscedasticDNN(Inference):
             )
 
 
-    def fit(self, epochs):
+    def fit(self, epochs, monitors=None):
         if not hasattr(self, 'dnn'):
             self._define_model()
 

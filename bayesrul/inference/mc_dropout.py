@@ -37,6 +37,7 @@ class MCDropout(Inference):
         p_dropout: float,
         hyperparams = None,
         GPU = 1,
+        studying = False,
     ) -> None:    
         self.name = f"dnn_{args.model_name}_{args.archi}"
         assert isinstance(GPU, int), \
@@ -60,8 +61,9 @@ class MCDropout(Inference):
 
         # Merge dicts and make attributes accessible by .
         self.args = Dotdict({**(args.__dict__), **hyp})
-
-        self.base_log_dir = Path(args.out_path, "frequentist", args.model_name)
+        
+        directory = "studies" if studying else "frequentist"
+        self.base_log_dir = Path(args.out_path, directory, args.model_name)
 
         self.checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
 
@@ -85,7 +87,7 @@ class MCDropout(Inference):
 
         assert assert_dropout(self.dnn), "MCDropout Model has no dropout layers"
 
-    def fit(self, epochs):
+    def fit(self, epochs, monitors=None):
         if not hasattr(self, 'dnn'):
             self._define_model()
 
