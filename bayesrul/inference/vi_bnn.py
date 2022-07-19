@@ -28,7 +28,6 @@ class VI_BNN(Inference):
         GPU = 1,
         studying = False,
     ) -> None:
-        self.name = f"vi_{args.model_name}_{args.archi}"
         assert isinstance(GPU, int), \
             f"GPU argument should be an int, not {type(GPU)}"
         assert isinstance(data, pl.LightningDataModule), \
@@ -118,8 +117,8 @@ class VI_BNN(Inference):
         
         if epochs > 0:
             self.trainer.fit(self.bnn, self.data)
-            return [self.trainer.callback_metrics[monitor] for monitor in monitors\
-                if monitors is not None]
+            if monitors:
+                return [self.trainer.callback_metrics[monitor] for monitor in monitors]
         else:
             raise RuntimeError(f"Cannot fit model for {epochs} epochs.")
 
@@ -183,7 +182,10 @@ class VI_BNN(Inference):
         })
         
         
-            
+    def remove_pretrain_file(self):
+        checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
+        print(f"Checkpoint_file : {checkpoint_file}")
+
 
     def num_params(self) -> int:
         ...
