@@ -93,6 +93,8 @@ class VI_BNN(Inference):
 
             
         if checkpoint_file:
+            print(f"Going here right ? {checkpoint_file}")
+            self.args.device = torch.device(f'cuda:{self.GPU}')
             self.bnn = VIBnnWrapper.load_from_checkpoint(checkpoint_file,
                 map_location=self.args.device)
         else:
@@ -124,13 +126,14 @@ class VI_BNN(Inference):
 
 
     def test(self):
-
+        print("Hey, you ! ")
         tester = pl.Trainer(
             gpus=[self.GPU], 
             log_every_n_steps=10, 
             logger=self.logger, 
             max_epochs=-1 # Silence warning
-            ) 
+        ) 
+        print(f"gpus : {tester.gpus} / {self.bnn.device}")
         tester.test(self.bnn, self.data, verbose=False)
 
         self.results = ResultSaver(self.base_log_dir)

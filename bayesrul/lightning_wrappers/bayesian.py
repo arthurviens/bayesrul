@@ -134,7 +134,7 @@ class VIBnnWrapper(BnnWrapper):
         activation="relu",
         optimizer='nadam',
         lr=1e-3,
-        device=torch.device('cuda:0'),
+        device=torch.device('cuda:1'),
         prior_loc=0.,
         prior_scale=10,
         likelihood_scale=3,

@@ -22,7 +22,7 @@ class HomoscedasticDNN(Inference):
         args,
         data: pl.LightningDataModule,
         hyperparams = None,
-        GPU = 1,
+        GPU = 0,
     ) -> None:    
         self.name = f"dnn_{args.model_name}_{args.archi}"
         assert isinstance(GPU, int), \

@@ -1,7 +1,13 @@
 import numpy as np
 import pandas as pd 
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
+from bayesrul.utils.metrics import normal_cdf
 
+import statsmodels.api as sm 
+
+from typing import List
+
+import torch
 
 def findNewRul(arr: np.array) -> np.array:
     """ Finds the indexes to separate the different engines in test set.
@@ -133,5 +139,41 @@ def addTestFlightInfo(df: pd.DataFrame, path:str = 'data/ncmapss/'):
     df['engine_id'] = engine_id
 
     assert df.isna().sum().sum() == 0, "NaNs introduced when adding test data."
+
+    return df
+
+
+def smooth_some_columns(
+    df: pd.DataFrame, 
+    cols, 
+    bandwidth=0.01,
+) -> pd.DataFrame:
+    lowess = sm.nonparametric.lowess
+    if isinstance(bandwidth, int):
+        bandwidths = [bandwidth] * len(cols)
+    elif isinstance(bandwidth, list) & (len(bandwidth) == len(cols)):
+        bandwidths = bandwidth
+    else:
+        raise RuntimeError(f"'Bandwidth' parameter must be int or list of same size as cols")
+
+    pd.options.mode.chained_assignment = None
+    for i, col in enumerate(cols):
+        column = lowess(df[col].copy(), df.index.copy(), bandwidths[i])
+        df[col+'_smooth'] = column[:, 1]
+    pd.options.mode.chained_assignment = 'warn'
+
+    return df
+
+
+def post_process(df: pd.DataFrame, data_path='../data/ncmapss', sigma=1.96) -> pd.DataFrame:
+    assert isinstance(sigma, int) or isinstance(sigma, float), \
+        f"{sigma} has to be int or float"
+    sigma = torch.tensor([sigma])
+    
+    df['preds_minus'] = df['preds'] - sigma * df['stds']
+    df['preds_plus'] = df['preds'] + sigma * df['stds']
+
+    df = addTestFlightInfo(df, path=data_path)
+    df = addFlightHours(df, 10, 30, 10)
 
     return df

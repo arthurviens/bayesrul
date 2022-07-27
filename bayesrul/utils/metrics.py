@@ -3,7 +3,6 @@ Metrics for evaluation on the test set
 """
 
 import torch
-import numpy as np
 from math import sqrt
 from torch.distributions import Normal
 from bayesrul.utils.miscellaneous import assert_same_shapes

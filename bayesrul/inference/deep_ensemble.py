@@ -29,7 +29,7 @@ class DeepEnsemble(Inference):
         data: pl.LightningDataModule,
         n_models: int,
         hyperparams = None,
-        GPU = 1,
+        GPU = 0,
         studying = False,
     ) -> None:    
         self.name = f"deepEnsemble{n_models}_{args.model_name}_{args.archi}"

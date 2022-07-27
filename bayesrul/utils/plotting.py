@@ -1,6 +1,7 @@
 from pathlib import Path
 import numpy as np
 import pandas as pd 
+import altair as alt
 import matplotlib.pyplot as plt
 import seaborn as sns
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
@@ -86,68 +87,54 @@ def plot_rul_pred(out, std=False):
 
     return fig, ax
 
+"""
+def plot_one_rul_pred(df: pd.DataFrame, idx: int):
+    alt.data_transformers.disable_max_rows()
 
-def plot_one_rul_pred(out, idx, std=False, fig=None):
-    preds = out['preds']
-    labels = out['labels']
-    if std:
-        stds = out['stds']
+    engine = df[df.engine_id == idx]
 
-    indexes = findNewRul(labels)
-    assert (idx > 0) & (idx < len(indexes)), f"Could not find {idx}th engine."
-    preds = preds[indexes[idx-1]:indexes[idx]]
-    labels = labels[indexes[idx-1]:indexes[idx]]
-    if std:
-        stds = stds[indexes[idx-1]:indexes[idx]]
+    base = alt.Chart(engine).transform_calculate(
+        true="'True RUL'",
+        pred="'Predicted RUL'",
+        interval="'Confidence Interval'",
+    )
 
-    data = NCMAPSSDataModule('../data/ncmapss/', 10000, all_dset=True)
-    loader = data.test_dataloader()
-    xx, yy, zz = pd.Series(dtype='object'), pd.Series(dtype='object'), pd.Series(dtype='object')
-    for x, y, z, t, u, v in loader:
-        xx = pd.concat([xx, pd.Series(x.detach().flatten())])
-        yy = pd.concat([yy, pd.Series(y.detach().flatten())])
-        zz = pd.concat([zz, pd.Series(z.detach().flatten())])
+    scale = alt.Scale(domain=["True RUL", "Predicted RUL", "Confidence Interval"], range=['black', 'darkblue', 'lightblue'])
 
-    df = pd.concat([xx, yy, zz], axis=1).rename(columns={0: 'ds_id', 1: 'unit_id', 2: 'win_id'}).reset_index(drop=True)
-    df = df[indexes[idx-1]:indexes[idx]].reset_index(drop=True)
-    engines = df['unit_id'].unique()
-    assert len(engines) == 1, f"Different engines in selected set {engines}"
-    
-    total_sampling_coef = 10 * (30 + (len(df.index) - 1) * 10)
-    flight_hours = (df.index / df.index.max()) * total_sampling_coef / (60*60)
-    
+    labels = base.mark_line(color='red').encode(
+        x = alt.X("flight_hours", title="Flight hours"),
+        y = alt.Y("labels_smooth:Q", scale=alt.Scale(domain=(0, 100), clamp=True), 
+                    title="RUL (in number of cycles)"),
+        color = alt.Color('true:N', scale=scale, title='')
+        )
 
-    n = len(preds)
-    assert n == len(labels), "Inconsistent sizes predictions {}, labels {}"\
-        .format(n, len(labels))
+    preds = base.mark_line(color='black').encode(
+            x = alt.X("flight_hours", title="Flight hours"),
+            y = alt.Y("preds_smooth:Q"), 
+            color = alt.Color('pred:N', scale=scale, title='')
+        )
 
-    if fig is None:
-        fig, ax = plt.subplots(figsize = (20, 5))
-    else:
-        ax = fig.add_subplot(1,1,1)
-    ax.plot(flight_hours, preds, color='blue', linewidth = 0.5,label='Mean RUL predicted')
-    ax.plot(flight_hours, labels, color='black', linewidth = 3, label='True RUL')
-    if std:
-        ax.fill_between(flight_hours, preds-1.96*stds, preds+1.96*stds, 
-                color='lightskyblue', alpha=0.3, label="95% confidence")
-        ax.fill_between(flight_hours, preds-1.29*stds, preds+1.29*stds, 
-                color='dodgerblue', alpha=0.3, label="80% confidence")
+    confidence = base.mark_area(opacity=0.9, color="#9ecae9").encode(
+            x = alt.X("flight_hours", title="Flight hours"),
+            y = alt.Y("preds_minus_smooth:Q"), 
+            y2 = alt.Y2("preds_plus_smooth:Q"),
+            color=alt.Color('interval:N', scale=scale, title='')
+        )
 
-    ax.set_title(f"RUL prediction for engine #{engines[0]:03d}")
-    ax.set_xlabel("Hours of flight (accelerated deterioration)")
-    ax.set_ylabel("Remaining life in flight cycles")
-    #plt.ylim(-1, 100)
-    ax.grid()
-    plt.legend()
+    chart = alt.layer(
+        confidence + preds + labels
+    ).configure_legend(
+        strokeColor='gray',
+        fillColor='#EEEEEE',
+        padding=10,
+        cornerRadius=10,
+        orient='top-right'
+    ).properties(width=800)\
+        .configure_axisY(titleAngle=0, titleY=-10, titleAnchor="start")\
+        .configure_axis(titleFontSize=16, labelFontSize=12)'''
 
-    ax.spines["right"].set_visible(False)
-    ax.spines["top"].set_visible(False)
-    #ax.spines["left"].set_visible(False)
-    #ax.spines["bottom"].set_visible(False)
-    #ax.spines["bottom"].set(linewidth=2, position=['data',0])
-
-    return fig, ax
-
+    return chart
+"""
 
 
 def plot_uncertainty(preds, unc, idx):
