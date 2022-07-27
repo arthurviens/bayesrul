@@ -5,6 +5,7 @@ from bayesrul.lightning_wrappers.bayesian import VIBnnWrapper
 from bayesrul.lightning_wrappers.frequentist import DnnPretrainWrapper
 from optuna.integration import PyTorchLightningPruningCallback
 from pathlib import Path
+from bayesrul.utils.miscellaneous import TBLogger
 
 import torch
 import pyro
@@ -12,8 +13,9 @@ import argparse
 import optuna
 
 debug = False
-EPOCHS = 200 if not debug else 2
-device = torch.device('cuda:2')
+EPOCHS = 150 if not debug else 2
+GPU = 0
+device = torch.device(f'cuda:{GPU}')
 
 def objective(trial: optuna.trial.Trial) -> float:
     pyro.clear_param_store()
@@ -25,21 +27,21 @@ def objective(trial: optuna.trial.Trial) -> float:
     q_scale = trial.suggest_float("q_scale", 1e-4, 1e-1, log=True)
     fit_context = trial.suggest_categorical("fit_context", ['lrt', 'flipout']) 
     lr = trial.suggest_float("lr", 1e-4, 1e-1, log=True)
-    num_particles = 1# trial.suggest_categorical("num_particles", [1, 3])
-    guide_base = trial.suggest_categorical("guide_base", ['normal', 'radial'])
-    optimizer = trial.suggest_categorical("optimizer", ['adam', 'nadam', 'sgd'])
+    num_particles = 1 # trial.suggest_categorical("num_particles", [1, 3])
+    guide_base = 'normal' #trial.suggest_categorical("guide_base", ['normal', 'radial'])
+    optimizer = 'adam' #trial.suggest_categorical("optimizer", ['adam', 'nadam', 'sgd'])
     args.archi = trial.suggest_categorical("args.archi", 
-            ['linear', 'conv', 'inception', 'bigception'])
-    args.activation = trial.suggest_categorical("args.activation", 
-        ['leaky_relu', 'tanh', 'relu'])
+            ['inception', 'bigception'])#, 'bigception'])
+    args.activation = 'relu' #trial.suggest_categorical("args.activation", 
+    #    ['leaky_relu', 'tanh', 'relu'])
     args.last_layer = False #trial.suggest_categorical("args.last_layer", [True, False])
-    args.pretrain = trial.suggest_categorical("args.pretrain", [0, 50])
+    args.pretrain = 5 #trial.suggest_categorical("args.pretrain", [0, 50])
 
 
     data = NCMAPSSDataModule(args.data_path, batch_size=10000)
     monitor = f"mse/val"
     trainer = pl.Trainer(
-        gpus=[2],
+        gpus=[GPU],
         logger=True,
         enable_checkpointing=False,
         max_epochs=EPOCHS,
@@ -119,13 +121,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     
-    pruner: optuna.pruners.BasePruner = (
-        optuna.pruners.NopPruner
-    )
+    
     study = optuna.create_study(
         direction="minimize",
-        study_name="optuna_1", 
-        pruner=pruner,
+        study_name="best_mfvi",
         storage="sqlite:///study.db",
         load_if_exists=True,
     )

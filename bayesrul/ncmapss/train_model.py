@@ -1,8 +1,9 @@
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
 
 from bayesrul.inference.vi_bnn import VI_BNN
-from bayesrul.inference.dnn import DNN
+from bayesrul.inference.dnn import HomoscedasticDNN, HeteroscedasticDNN
 from bayesrul.inference.mc_dropout import MCDropout
+from bayesrul.inference.deep_ensemble import DeepEnsemble
 
 from torch.profiler import profile, record_function, ProfilerActivity
 from torch.profiler import schedule
@@ -81,13 +82,13 @@ if __name__ == "__main__":
                 'activation': 'leaky_relu',
                 'bias' : True,
                 'prior_loc' : 0,
-                'prior_scale' : 0.05,
+                'prior_scale' : 0.4,
                 'likelihood_scale' : 0, # Useless in Heteroskedastic case
-                'q_scale' : 0.0001,
-                'fit_context' : 'lrt',
+                'q_scale' : 0.004,
+                'fit_context' : 'null',
                 'num_particles' : 1,
-                'optimizer': 'sgd',
-                'lr' : 0.005,
+                'optimizer': 'adam',
+                'lr' : 0.002,
                 'last_layer': args.last_layer,
                 'pretrain_file' : None,
             }
@@ -100,7 +101,7 @@ if __name__ == "__main__":
                 on_trace_ready=torch.profiler.tensorboard_trace_handler('results/ncmapss/bayesian/profile/lightning_logs/')
             ) as prof:"""
 
-            module.fit(50)
+            module.fit(2)
             #prof.step
         else:
             module._define_model()
@@ -109,7 +110,8 @@ if __name__ == "__main__":
     else:
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
         #module = DNN(args, data)
-        module = MCDropout(args, data, 0.4)
+        module = MCDropout(args, data, 0.5)
         if not args.test:
-            module.fit(500)
-        module.test()
+            module.fit(3)
+        #module.test()
+        module.epistemic_aleatoric_uncertainty(device=torch.device('cpu'))

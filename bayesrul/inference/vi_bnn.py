@@ -93,7 +93,6 @@ class VI_BNN(Inference):
 
             
         if checkpoint_file:
-            print(f"Going here right ? {checkpoint_file}")
             self.args.device = torch.device(f'cuda:{self.GPU}')
             self.bnn = VIBnnWrapper.load_from_checkpoint(checkpoint_file,
                 map_location=self.args.device)
@@ -106,6 +105,16 @@ class VI_BNN(Inference):
             )
 
     def fit(self, epochs: int, monitors=None):
+        if ((monitors is not None) & 
+            (('bi_obj' not in self.base_log_dir.as_posix()) 
+                or ('single_obj' not in self.base_log_dir.as_posix()))):
+            base = "/".join(self.base_log_dir.as_posix().split('/')[:-1])
+            end = self.base_log_dir.as_posix().split('/')[-1]
+            if len(monitors) == 1:
+                log_dir = Path(base, "single_obj", end)
+            else:
+                log_dir = Path(base, "bi_obj", end)
+            self.base_log_dir = log_dir
         self.trainer = pl.Trainer(
             default_root_dir=self.base_log_dir,
             gpus=[self.GPU], 
@@ -126,14 +135,13 @@ class VI_BNN(Inference):
 
 
     def test(self):
-        print("Hey, you ! ")
         tester = pl.Trainer(
             gpus=[self.GPU], 
             log_every_n_steps=10, 
             logger=self.logger, 
             max_epochs=-1 # Silence warning
         ) 
-        print(f"gpus : {tester.gpus} / {self.bnn.device}")
+        
         tester.test(self.bnn, self.data, verbose=False)
 
         self.results = ResultSaver(self.base_log_dir)
