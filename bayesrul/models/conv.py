@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchinfo import summary
 
 
 class Conv(nn.Module):
@@ -139,3 +140,7 @@ class Conv2(nn.Module):
         elif self.out_size > 2: 
             return self.softmax(self.last(self.layers(x.unsqueeze(1))))
         
+
+if __name__ == "__main__":
+    dnn = Conv(50, 18)
+    print(summary(dnn, (100, 50, 18)))

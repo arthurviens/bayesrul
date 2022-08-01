@@ -15,13 +15,13 @@ EPOCHS = 2 if DEBUG else 500
 
 
 def bayesian_or_not(s):
-    if s.upper() in ["MFVI", "RADIAL", "LOWRANK"]:
+    if s.upper() in ["MFVI", "RADIAL", "LOWRANK", "LRT", "FLIPOUT"]:
         return True
     elif s.upper() in ["MC_DROPOUT", "DEEP_ENSEMBLE", "HETERO_NN"]:
         return False
     else:
-        raise ValueError(f"Unknow model {s}. Choose from "
-            "mfvi, radial, lowrank, mc_dropout, deep_ensemble, hetero_nn ")
+        raise ValueError(f"Unknow model {s}. Choose from mfvi, lrt, flipout, "
+            "radial, lowrank, mc_dropout, deep_ensemble, hetero_nn ")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Bayesrul benchmarking')
@@ -37,7 +37,7 @@ if __name__ == "__main__":
                     help='Directory where to store models and logs')
     args = parser.parse_args()
 
-    models = ['RADIAL']
+    models = ['LRT']
     path = "results/ncmapss/best_models"
 
     for model in models:
@@ -46,9 +46,12 @@ if __name__ == "__main__":
 
         with open(ls[0], 'r') as f:
             hyp = json.load(f)
+            hyp['GPU'] = 0
+        try:
+            del hyp['value_0']; del hyp['value_1']
+        except KeyError:
+            pass
 
-        del hyp['value_0']; del hyp['value_1']
-        
         args.model_name = model
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
 

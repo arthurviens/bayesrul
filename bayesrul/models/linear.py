@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from torchinfo import summary
+
 # Model architectures based on:
 # https://github.com/kkangshen/bayesian-deep-rul/blob/master/models/
 # (Just model examples to be assessed and modified according to our needs)
@@ -69,3 +71,8 @@ class Linear(nn.Module):
         elif self.out_size > 2: 
             return self.softmax(self.last(self.layers(x.unsqueeze(1))))
         
+
+
+if __name__ == "__main__":
+    dnn = Linear(50, 18)
+    print(summary(dnn, (100, 50, 18)))

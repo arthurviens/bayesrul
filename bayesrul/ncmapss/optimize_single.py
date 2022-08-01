@@ -368,8 +368,8 @@ if __name__ == "__main__":
 
     if args.sampler.upper() == 'RANDOM':
         sampler = optuna.samplers.RandomSampler()
-    elif args.sampler.upper() == 'CMAES':
-        sampler = optuna.samplers.CmaEsSampler()
+    elif args.sampler.upper() == 'TPE':
+        sampler = optuna.samplers.TPESampler()
     else:
         raise ValueError(f"Unknow sampler {args.sampler}. Choose RANDOM or NSGAII")
 
