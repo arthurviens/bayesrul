@@ -15,6 +15,7 @@ from bayesrul.utils.miscellaneous import (
     numel,
 )
 from bayesrul.utils.plotting import ResultSaver
+from tqdm import tqdm
 
 
 def assert_dropout(model):
@@ -36,7 +37,8 @@ class MCDropout(Inference):
         data: pl.LightningDataModule,
         p_dropout: float,
         hyperparams = None,
-        GPU = 1,
+        GPU = 0,
+        studying = False,
     ) -> None:    
         self.name = f"dnn_{args.model_name}_{args.archi}"
         assert isinstance(GPU, int), \
@@ -51,7 +53,7 @@ class MCDropout(Inference):
             'lr' : 1e-3,
             'device' : torch.device(f"cuda:{self.GPU}"),
             'dropout' : p_dropout,
-            'out_size' : 1,
+            'out_size' : 2,
         }
             
         if hyperparams is not None: # Overriding defaults with arguments
@@ -60,8 +62,9 @@ class MCDropout(Inference):
 
         # Merge dicts and make attributes accessible by .
         self.args = Dotdict({**(args.__dict__), **hyp})
-
-        self.base_log_dir = Path(args.out_path, "frequentist", args.model_name)
+        
+        directory = "studies" if studying else "frequentist"
+        self.base_log_dir = Path(args.out_path, directory, args.model_name)
 
         self.checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
 
@@ -70,7 +73,9 @@ class MCDropout(Inference):
             default_hp_metric=False,
         )
 
-    def _define_model(self):
+    def _define_model(self, device=None):
+        if device is not None:
+            self.args.device = device
         self.checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
         if self.checkpoint_file:
             print("Loading model from checkpoint")
@@ -79,13 +84,14 @@ class MCDropout(Inference):
         else:
             self.dnn = DnnWrapper(
                 self.data.win_length, 
-                self.data.n_features, 
+                self.data.n_features,
                 **self.args,
             )
+        self.dnn.to(self.args.device)
 
         assert assert_dropout(self.dnn), "MCDropout Model has no dropout layers"
 
-    def fit(self, epochs):
+    def fit(self, epochs, monitors=None):
         if not hasattr(self, 'dnn'):
             self._define_model()
 
@@ -104,6 +110,7 @@ class MCDropout(Inference):
         )
 
         self.trainer.fit(self.dnn, self.data, ckpt_path=self.checkpoint_file)
+
     def test(self):
         if not hasattr(self, 'dnn'):
             self._define_model()
@@ -123,8 +130,56 @@ class MCDropout(Inference):
         self.results.save(self.dnn.test_preds)
 
 
-    def epistemic_aleatoric_uncertainty(self):
-        ...
+    def epistemic_aleatoric_uncertainty(self, device=None):
+        if device is None:
+            device = self.args.device
+        if not hasattr(self, 'dnn'):
+            self._define_model(device=device)
+
+        dim = 0
+        n = 0
+        pred_loc, predictive_var, epistemic_var, aleatoric_var = [], [], [], []
+        for i, (x, y) in enumerate(tqdm(self.data.test_dataloader())):
+            x, y = x.to(device), y.to(device)
+            n += len(x)
+
+            outputs = []
+            for j in range(10):
+                outputs.append(self.dnn.forward(x))
+            outputs = torch.stack(outputs)
+
+            if isinstance(outputs, tuple):
+                loc, scale = outputs
+            else:
+                outputs = outputs.squeeze()
+                loc, scale = outputs[:, :, 0], outputs[:, :, 1]
+            # Sd is the PREDICTIVE VARIANCE 
+            pred_loc.append(loc.mean(axis=dim))
+
+            predictive_var.append((scale**2).mean(dim).add(loc.var(dim)).detach().cpu())
+            #predictive_unc = predictive_var.sqrt()
+            epistemic_var.append(loc.var(dim).detach().cpu())
+            #epistemic_unc = epistemic_var.sqrt()
+            aleatoric_var.append((scale**2).mean(dim).detach().cpu())
+            #aleatoric_unc = aleatoric_var.sqrt()
+            del outputs
+
+        pred_loc = torch.cat(pred_loc)
+        predictive_var = torch.cat(predictive_var)
+        epistemic_var = torch.cat(epistemic_var)
+        aleatoric_var = torch.cat(aleatoric_var)
+
+        assert len(pred_loc) == n, f"Size ({len(pred_loc)}) of uncertainties should match {n}"
+        assert len(predictive_var) == n, f"Size ({len(predictive_var)}) of uncertainties should match {n}"
+        assert len(epistemic_var) == n, f"Size ({len(epistemic_var)}) of uncertainties should match {n}"
+        assert len(aleatoric_var) == n, f"Size ({len(aleatoric_var)}) of uncertainties should match {n}"
+
+        self.results.append({ # Automatic save to file
+            'unweighted_pred_loc': pred_loc.detach().cpu().numpy(),
+            'pred_var': predictive_var.detach().cpu().numpy(),
+            'ep_var': epistemic_var.detach().cpu().numpy(),
+            'al_var': aleatoric_var.detach().cpu().numpy(),
+        })
 
     def num_params(self) -> int:
         if not hasattr(self, 'dnn'):

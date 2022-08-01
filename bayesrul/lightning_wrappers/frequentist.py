@@ -1,3 +1,4 @@
+from audioop import rms
 from black import out
 import pytorch_lightning as pl
 import torch
@@ -8,7 +9,7 @@ from bayesrul.models.inception import InceptionModel, BigCeption
 from bayesrul.models.linear import Linear
 from bayesrul.models.conv import Conv
 from bayesrul.utils.miscellaneous import weights_init, enable_dropout
-from bayesrul.utils.metrics import MPIW, PICP, p_alphalamba
+from bayesrul.utils.metrics import MPIW, PICP, p_alphalamba, rms_calibration_error
 
 import numpy as np
 
@@ -19,13 +20,14 @@ class DnnWrapper(pl.LightningModule):
         win_length,
         n_features,
         bias=True,
-        archi="linear",
+        archi="inception",
         out_size=1,
         lr=1e-3,
         weight_decay=1e-3,
         loss='mse',
         activation='relu',
         dropout=0,
+        device=torch.device('cuda:0'),
         **kwargs
     ):
         super().__init__()
@@ -33,16 +35,16 @@ class DnnWrapper(pl.LightningModule):
         
         if archi == "linear":
             self.net = Linear(win_length, n_features, activation=activation,
-                dropout=dropout, bias=bias, out_size=out_size)
+                dropout=dropout, bias=bias, out_size=out_size).to(device)
         elif archi == "conv":
             self.net = Conv(win_length, n_features, activation=activation,
-                dropout=dropout, bias=bias, out_size=out_size)
+                dropout=dropout, bias=bias, out_size=out_size).to(device)
         elif archi == "inception":
             self.net = InceptionModel(win_length, n_features, out_size=out_size,
-                dropout=dropout, activation=activation, bias=bias)
+                dropout=dropout, activation=activation, bias=bias).to(device)
         elif archi == "bigception":
             self.net = BigCeption(n_features, activation=activation, 
-                dropout=dropout, out_size=out_size, bias=bias)
+                dropout=dropout, out_size=out_size, bias=bias).to(device)
         else:
             raise RuntimeError(f"Model architecture {archi} not implemented")
 
@@ -69,6 +71,9 @@ class DnnWrapper(pl.LightningModule):
 
     def forward(self, x):
         return self.net(x)
+
+    def to(self, device:torch.device):
+        self.net.to(device)
 
     def _compute_loss(self, batch, phase, return_pred=False): 
         (x, y) = batch
@@ -97,44 +102,58 @@ class DnnWrapper(pl.LightningModule):
         if self.out_size == 2:
             loss, loc, scale = self._compute_loss(batch, "train", return_pred=True)
             mse = F.mse_loss(loc, batch[1])
+            rmsce = rms_calibration_error(loc, scale, batch[1])
             self.log("mse/train", mse)
+            self.log("rmsce/train", rmsce)
         else:
-            loss = self._compute_loss(batch, "train", return_pred=True)
+            loss = self._compute_loss(batch, "train", return_pred=False)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        if (self.dropout > 0) & (self.current_epoch % 5 == 0): # MC-Dropout
+        if (self.dropout > 0): # MC-Dropout 
             enable_dropout(self.net)
             preds = []
             losses = []
+            scales = []
             for i in range(10):
-                loss, pred = self._compute_loss(batch, "val", return_pred=True)
-                preds.append(pred)
+                if (self.out_size == 2):
+                    loss, loc, scale = self._compute_loss(batch, "val", return_pred=True)
+                    scales.append(scale)
+                else:
+                    loss, loc = self._compute_loss(batch, "val", return_pred=True)
+                preds.append(loc)
                 losses.append(loss)
             loss = torch.stack(losses).mean()
             preds = torch.stack(preds)
-            std = preds.std(axis=0)
+            if (self.out_size == 2):
+                scales = torch.stack(scales)
+                scale = scales.mean(axis=0)
+            else:
+                scale = preds.std(axis=0)
             preds = preds.mean(axis=0)
-            mse = F.mse_loss(preds, batch[1])
-            self.log("mse/val", mse)
-            return {'loss': loss, 'label': batch[1], 'pred': preds, 'std': std} 
-        elif (self.loss == "gaussian_nll") & (self.out_size == 2):
+            self.log(f"{self.loss}/val", loss)
+            return {'loss': loss, 'label': batch[1], 'pred': preds, 'std': scale} 
+        elif (self.out_size == 2): # Not MC Dropout
             loss, pred, std = self._compute_loss(batch, "val", return_pred=True)
-            mse = F.mse_loss(pred, batch[1])
-            self.log("mse/val", mse)
+            self.log(f"{self.loss}/val", loss)
             return {'loss': loss, 'label': batch[1], 'pred': pred, 'std': std} 
         else:
+            loss = self._compute_loss(batch, "val", return_pred=False)
+            self.log(f"{self.loss}/val", loss)
             return {'loss': loss}
 
     def validation_epoch_end(self, outputs) -> None:
-        if ((self.dropout > 0) | (self.out_size == 2)) & self.current_epoch % 5 == 0:
-            preds = torch.tensor([])
-            labels = torch.tensor([])
-            stds = torch.tensor([])
-            for output in outputs:
-                preds = torch.cat([preds, output['pred'].cpu().detach()])
-                labels = torch.cat([labels, output['label'].cpu().detach()])
-                stds = torch.cat([stds, output['std'].cpu().detach()])
+        if ((self.dropout > 0) | (self.out_size == 2)):
+            
+            for i, output in enumerate(outputs):
+                if i == 0:
+                    preds = output['pred'].detach()
+                    labels = output['label'].detach()
+                    stds = output['std'].detach()
+                else:
+                    preds = torch.cat([preds, output['pred'].detach()])
+                    labels = torch.cat([labels, output['label'].detach()])
+                    stds = torch.cat([stds, output['std'].detach()])
 
             mpiw = MPIW(
                 preds, labels, normalized=True
@@ -142,7 +161,12 @@ class DnnWrapper(pl.LightningModule):
             picp = PICP(
                 labels, preds, stds
             )
+            
             alambda = p_alphalamba(labels, preds, stds)
+            mse = F.mse_loss(preds, labels)
+            rmsce = rms_calibration_error(preds, stds, labels)
+            self.log("mse/val", mse)
+            self.log("rmsce/val", rmsce)
             self.log(f"mpiw/val", mpiw)
             self.log(f"picp/val", picp)
             self.log(f"alambda/val", alambda)
@@ -153,21 +177,27 @@ class DnnWrapper(pl.LightningModule):
             enable_dropout(self.net)
             preds = []
             losses = []
+            scales = []
             for i in range(100):
-                loss, pred = self._compute_loss(batch, "test", return_pred=True)
-                preds.append(pred)
+                if self.out_size == 2:
+                    loss, loc, scale = self._compute_loss(batch, "val", return_pred=True)
+                    scales.append(scale)
+                else:
+                    loss, loc = self._compute_loss(batch, "val", return_pred=True)
+                preds.append(loc)
                 losses.append(loss)
             
             loss = torch.stack(losses).mean()
             preds = torch.stack(preds)
-            std = preds.std(axis=0)
+            if (self.out_size == 2):
+                scales = torch.stack(scales)
+                scale = scales.mean(axis=0)
+            else:
+                scale = preds.std(axis=0)
             preds = preds.mean(axis=0)
-
-            mse = F.mse_loss(preds, batch[1])
-            self.log("mse/val", mse)
             
-            return {'loss': loss, 'label': batch[1], 'pred': preds, 'std': std} 
-        elif (self.out_size == 2):
+            return {'loss': loss, 'label': batch[1], 'pred': preds, 'std': scale} 
+        elif (self.out_size == 2) & (self.dropout == 0): 
             loss, pred, std = self._compute_loss(batch, "test", return_pred=True)
             return {'loss': loss, 'label': batch[1], 'pred': pred, 'std': std} 
         else:
@@ -203,6 +233,10 @@ class DnnWrapper(pl.LightningModule):
                 stds,
             )
             alambda = p_alphalamba(labels, preds, stds)
+            mse = F.mse_loss(preds, labels)
+            rmsce = rms_calibration_error(preds, stds, labels)
+            self.log("mse/test", mse)
+            self.log("rmsce/test", rmsce)
             self.log(f"mpiw/test", mpiw)
             self.log(f"picp/test", picp)
             self.log(f"alambda/test", alambda)
@@ -349,8 +383,8 @@ class DeepEnsembleWrapper(pl.LightningModule):
         self.criterion = F.gaussian_nll_loss
         self.lr = lr
         self.weight_decay = weight_decay
-        self.test_preds = {'preds': [], 'labels': []}
-        if dropout > 0: self.test_preds['stds'] = []
+        self.test_preds = {'preds': [], 'labels': [], 'stds': []}
+
         self.dropout = dropout
         for net in self.nets:
             net.apply(weights_init)
@@ -369,6 +403,11 @@ class DeepEnsembleWrapper(pl.LightningModule):
         var = (torch.square(scale) + torch.square(loc)).mean(0) - torch.square(loc.mean(0))
         return loc.mean(0), var
 
+    def forward_one(self, x):
+        self.turn = (self.turn + 1) % len(self.nets)
+        out = self.nets[self.turn](x)
+        return out[:, 0], out[:, 1]
+
     def _compute_loss(self, batch, phase, return_pred=False): 
         (x, y) = batch
         loc, var = self.forward(x)
@@ -386,24 +425,23 @@ class DeepEnsembleWrapper(pl.LightningModule):
         self.log("mse/train", mse)
         return loss"""
         (x, y) = batch
-        loc, var = self.nets[self.turn](x)
-        self.turn = (self.turn + 1) % len(self.nets)
+        loc, var = self.forward_one(x)
         
         loss = self.criterion(loc, y, var)
         mse = F.mse_loss(loc, y)
+        rmsce = rms_calibration_error(loc, var.sqrt(), y)
         self.log("mse/train", mse)
+        self.log("rmsce/train", rmsce)
         self.log(f"{self.loss}/train", loss)
         return loss
 
-
     def validation_step(self, batch, batch_idx):
         loss, loc, var = self._compute_loss(batch, "val", return_pred=True)
-        mse = F.mse_loss(loc, batch[1])
-        self.log("mse/val", mse)
+        self.log(f"{self.loss}/val", loss)
         return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)} 
         
     def validation_epoch_end(self, outputs) -> None:
-        if (self.dropout > 0) & self.current_epoch % 5 == 0:
+        if self.current_epoch % 5 == 0:
             preds = torch.tensor([])
             labels = torch.tensor([])
             stds = torch.tensor([])
@@ -419,14 +457,16 @@ class DeepEnsembleWrapper(pl.LightningModule):
                 labels, preds, stds
             )
             alambda = p_alphalamba(labels, preds, stds)
+            mse = F.mse_loss(preds, labels)
+            rmsce = rms_calibration_error(preds, stds, labels)
+            self.log("mse/val", mse)
+            self.log("rmsce/val", rmsce)
             self.log(f"mpiw/val", mpiw)
             self.log(f"picp/val", picp)
             self.log(f"alambda/val", alambda)
 
     def test_step(self, batch, batch_idx):
         loss, loc, var = self._compute_loss(batch, "test", return_pred=True)
-        mse = F.mse_loss(loc, batch[1])
-        self.log("mse/test", mse)
         return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)} 
 
     def test_epoch_end(self, outputs):
@@ -443,24 +483,27 @@ class DeepEnsembleWrapper(pl.LightningModule):
 
         self.test_preds['preds'] = preds.numpy()
         self.test_preds['labels'] = labels.numpy()
+        self.test_preds['stds'] = stds.numpy()
 
-        if self.dropout > 0:
-            self.test_preds['stds'] = stds.numpy()
-            mpiw = MPIW(
-                stds, 
-                labels, 
-                normalized=True
-            )
-            picp = PICP(
-                labels,
-                preds,
-                stds,
-            )
-            alambda = p_alphalamba(labels, preds, stds)
-            self.log(f"mpiw/test", mpiw)
-            self.log(f"picp/test", picp)
-            self.log(f"alambda/test", alambda)
-        
+        mpiw = MPIW(
+            stds,
+            labels,
+            normalized=True
+        )
+        picp = PICP(
+            labels,
+            preds,
+            stds,
+        )
+        alambda = p_alphalamba(labels, preds, stds)
+        mse = F.mse_loss(preds, labels)
+        rmsce = rms_calibration_error(preds, stds, labels)
+        self.log("rmsce/test", rmsce)
+        self.log("mse/test", mse)
+        self.log(f"mpiw/test", mpiw)
+        self.log(f"picp/test", picp)
+        self.log(f"alambda/test", alambda)
+    
 
     def configure_optimizers(self):
         params = []

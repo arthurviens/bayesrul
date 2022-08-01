@@ -21,7 +21,8 @@ class Inference(ABC):
         args,
         data: LightningDataModule,
         hyperparams = None,
-        GPU = 1,
+        GPU = 0,
+        studying = False
     ) -> None:
         ...
 
@@ -35,6 +36,7 @@ class Inference(ABC):
     def fit(
         self,
         epochs: int,
+        monitors=None,
     ):
         ...
 

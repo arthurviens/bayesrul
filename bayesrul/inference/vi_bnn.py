@@ -26,8 +26,8 @@ class VI_BNN(Inference):
         data: pl.LightningDataModule,
         hyperparams = None,
         GPU = 1,
+        studying = False,
     ) -> None:
-        self.name = f"vi_{args.model_name}_{args.archi}_{args.guide}"
         assert isinstance(GPU, int), \
             f"GPU argument should be an int, not {type(GPU)}"
         assert isinstance(data, pl.LightningDataModule), \
@@ -46,8 +46,9 @@ class VI_BNN(Inference):
                 'optimizer': 'nadam',
                 'lr' : 1e-3,
                 'out_size': 2,
-                'last_layer': args.last_layer,
-                'pretrain_file' : None,
+                'last_layer': False,
+                'pretrain': 0,
+                'pretrain_file': None,
                 'device' : torch.device(f"cuda:{self.GPU}"),
             }
             
@@ -61,7 +62,8 @@ class VI_BNN(Inference):
 
         if self.args.guide == "radial": hyperparams['fit_context'] = 'null'
 
-        self.base_log_dir = Path(args.out_path, "bayesian", args.model_name)
+        directory = "studies" if studying else "bayesian"
+        self.base_log_dir = Path(args.out_path, directory, args.model_name)
         self.checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
     
         self.logger = TBLogger(
@@ -91,6 +93,7 @@ class VI_BNN(Inference):
 
             
         if checkpoint_file:
+            self.args.device = torch.device(f'cuda:{self.GPU}')
             self.bnn = VIBnnWrapper.load_from_checkpoint(checkpoint_file,
                 map_location=self.args.device)
         else:
@@ -101,7 +104,17 @@ class VI_BNN(Inference):
                 **self.args
             )
 
-    def fit(self, epochs: int):
+    def fit(self, epochs: int, monitors=None):
+        if ((monitors is not None) & 
+            (('bi_obj' not in self.base_log_dir.as_posix()) 
+                or ('single_obj' not in self.base_log_dir.as_posix()))):
+            base = "/".join(self.base_log_dir.as_posix().split('/')[:-1])
+            end = self.base_log_dir.as_posix().split('/')[-1]
+            if len(monitors) == 1:
+                log_dir = Path(base, "single_obj", end)
+            else:
+                log_dir = Path(base, "bi_obj", end)
+            self.base_log_dir = log_dir
         self.trainer = pl.Trainer(
             default_root_dir=self.base_log_dir,
             gpus=[self.GPU], 
@@ -115,17 +128,20 @@ class VI_BNN(Inference):
         
         if epochs > 0:
             self.trainer.fit(self.bnn, self.data)
+            if monitors:
+                return [self.trainer.callback_metrics[monitor] for monitor in monitors]
         else:
             raise RuntimeError(f"Cannot fit model for {epochs} epochs.")
 
-    def test(self):
 
+    def test(self):
         tester = pl.Trainer(
             gpus=[self.GPU], 
             log_every_n_steps=10, 
             logger=self.logger, 
             max_epochs=-1 # Silence warning
-            ) 
+        ) 
+        
         tester.test(self.bnn, self.data, verbose=False)
 
         self.results = ResultSaver(self.base_log_dir)
@@ -177,7 +193,10 @@ class VI_BNN(Inference):
         })
         
         
-            
+    def remove_pretrain_file(self):
+        checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
+        print(f"Checkpoint_file : {checkpoint_file}")
+
 
     def num_params(self) -> int:
         ...
