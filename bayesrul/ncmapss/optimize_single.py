@@ -219,7 +219,7 @@ def lowrank_objective(trial: optuna.trial.Trial) -> float:
     
 def mcdropout_objective(trial: optuna.trial.Trial) -> float:
     lr = trial.suggest_float("lr", 1e-4, 1e-1, log=True)
-    p_dropout = trial.suggest_float("p_dropout", 0.05, 0.85)
+    p_dropout = trial.suggest_float("p_dropout", 0.20, 0.85)
     args.archi = trial.suggest_categorical("args.archi", 
             ['inception', 'bigception'])
     args.activation = trial.suggest_categorical("args.activation", 
@@ -241,7 +241,7 @@ def mcdropout_objective(trial: optuna.trial.Trial) -> float:
                     hyperparams=hyperparams, GPU=GPU, studying=True)
     res = inference.fit(EPOCHS, monitors=monitors)
 
-    return res[0]
+    return res
     
 def deepensemble_objective(trial: optuna.trial.Trial) -> float:
     lr = trial.suggest_float("lr", 1e-4, 1e-1, log=True)
@@ -257,7 +257,6 @@ def deepensemble_objective(trial: optuna.trial.Trial) -> float:
     hyperparams = {
         'bias' : True,
         'lr' : lr,
-        'n_models': n_models,
         'trial_id' : trial.number,
         'device' : device,
     }
@@ -267,7 +266,7 @@ def deepensemble_objective(trial: optuna.trial.Trial) -> float:
                     hyperparams=hyperparams, GPU=GPU, studying=True)
     res = inference.fit(EPOCHS, monitors=monitors)
 
-    return res[0], res[1]
+    return res
     
 def heteroscedasticnn_objective(trial: optuna.trial.Trial) -> float:
     lr = trial.suggest_float("lr", 1e-4, 1e-1, log=True)
@@ -391,7 +390,7 @@ if __name__ == "__main__":
     
     study.optimize(
         objective,
-        n_trials=300, 
+        n_trials=150, 
         timeout=None,
         catch=(RuntimeError,),
     )

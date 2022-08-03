@@ -220,5 +220,7 @@ class BigCeption(nn.Module):
         self.load_state_dict(state_dict)
 
 if __name__ == "__main__":
-    dnn = BigCeption(50, 18)
-    print(summary(dnn, (100, 50, 18)))
+    dnn = BigCeption(30, 18)
+    print(summary(dnn, (100, 30, 18)))
+    dnn = InceptionModel(30, 18)
+    print(summary(dnn, (100, 30, 18)))

@@ -43,7 +43,7 @@ class DnnWrapper(pl.LightningModule):
             self.net = InceptionModel(win_length, n_features, out_size=out_size,
                 dropout=dropout, activation=activation, bias=bias).to(device)
         elif archi == "bigception":
-            self.net = BigCeption(n_features, activation=activation, 
+            self.net = BigCeption(win_length, n_features, activation=activation, 
                 dropout=dropout, out_size=out_size, bias=bias).to(device)
         else:
             raise RuntimeError(f"Model architecture {archi} not implemented")
@@ -373,8 +373,8 @@ class DeepEnsembleWrapper(pl.LightningModule):
                 dropout=dropout, activation=activation, bias=bias).to(device)
                 for i in range(n_models)]
         elif archi == "bigception":
-            self.nets = [BigCeption(n_features, activation=activation, dropout=dropout, 
-                out_size=out_size, bias=bias).to(device)
+            self.nets = [BigCeption(win_length, n_features, activation=activation, 
+                dropout=dropout, out_size=out_size, bias=bias).to(device)
                 for i in range(n_models)]
         else:
             raise RuntimeError(f"Model architecture {archi} not implemented")
@@ -441,45 +441,46 @@ class DeepEnsembleWrapper(pl.LightningModule):
         return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)} 
         
     def validation_epoch_end(self, outputs) -> None:
-        if self.current_epoch % 5 == 0:
-            preds = torch.tensor([])
-            labels = torch.tensor([])
-            stds = torch.tensor([])
-            for output in outputs:
-                preds = torch.cat([preds, output['pred'].cpu().detach()])
-                labels = torch.cat([labels, output['label'].cpu().detach()])
-                stds = torch.cat([stds, output['std'].cpu().detach()])
+        for i, output in enumerate(outputs):
+            if i == 0:
+                preds = output['pred'].detach()
+                labels = output['label'].detach()
+                stds = output['std'].detach()
+            else:
+                preds = torch.cat([preds, output['pred'].detach()])
+                labels = torch.cat([labels, output['label'].detach()])
+                stds = torch.cat([stds, output['std'].detach()])
 
-            mpiw = MPIW(
-                preds, labels, normalized=True
-            )
-            picp = PICP(
-                labels, preds, stds
-            )
-            alambda = p_alphalamba(labels, preds, stds)
-            mse = F.mse_loss(preds, labels)
-            rmsce = rms_calibration_error(preds, stds, labels)
-            self.log("mse/val", mse)
-            self.log("rmsce/val", rmsce)
-            self.log(f"mpiw/val", mpiw)
-            self.log(f"picp/val", picp)
-            self.log(f"alambda/val", alambda)
+        mpiw = MPIW(
+            preds, labels, normalized=True
+        )
+        picp = PICP(
+            labels, preds, stds
+        )
+        alambda = p_alphalamba(labels, preds, stds)
+        mse = F.mse_loss(preds, labels)
+        
+        rmsce = rms_calibration_error(preds, stds, labels)
+        self.log("mse/val", mse)
+        self.log("rmsce/val", rmsce)
+        self.log(f"mpiw/val", mpiw)
+        self.log(f"picp/val", picp)
+        self.log(f"alambda/val", alambda)
 
     def test_step(self, batch, batch_idx):
         loss, loc, var = self._compute_loss(batch, "test", return_pred=True)
         return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)} 
 
     def test_epoch_end(self, outputs):
-        for output in outputs:
-
-            preds = torch.tensor([])
-            labels = torch.tensor([])
-            stds = torch.tensor([])
-            for output in outputs:
-                preds = torch.cat([preds, output['pred'].cpu().detach()])
-                labels = torch.cat([labels, output['label'].cpu().detach()])
-                if self.dropout > 0:
-                    stds = torch.cat([stds, output['std'].cpu().detach()])
+        for i, output in enumerate(outputs):
+            if i == 0:
+                preds = output['pred'].detach()
+                labels = output['label'].detach()
+                stds = output['std'].detach()
+            else:
+                preds = torch.cat([preds, output['pred'].detach()])
+                labels = torch.cat([labels, output['label'].detach()])
+                stds = torch.cat([stds, output['std'].detach()])
 
         self.test_preds['preds'] = preds.numpy()
         self.test_preds['labels'] = labels.numpy()

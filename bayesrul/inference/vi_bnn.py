@@ -25,7 +25,7 @@ class VI_BNN(Inference):
         args,
         data: pl.LightningDataModule,
         hyperparams = None,
-        GPU = 1,
+        GPU = 0,
         studying = False,
     ) -> None:
         assert isinstance(GPU, int), \
@@ -115,6 +115,7 @@ class VI_BNN(Inference):
             else:
                 log_dir = Path(base, "bi_obj", end)
             self.base_log_dir = log_dir
+
         self.trainer = pl.Trainer(
             default_root_dir=self.base_log_dir,
             gpus=[self.GPU], 

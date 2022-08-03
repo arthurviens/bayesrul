@@ -110,8 +110,8 @@ if __name__ == "__main__":
     else:
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
         #module = DNN(args, data)
-        module = MCDropout(args, data, 0.5)
+        module = DeepEnsemble(args, data, 5)
         if not args.test:
             module.fit(3)
         #module.test()
-        module.epistemic_aleatoric_uncertainty(device=torch.device('cpu'))
+        #module.epistemic_aleatoric_uncertainty(device=torch.device('cpu'))

@@ -11,7 +11,7 @@ from bayesrul.inference.mc_dropout import MCDropout
 from bayesrul.inference.deep_ensemble import DeepEnsemble
 
 DEBUG = False
-EPOCHS = 2 if DEBUG else 500
+EPOCHS = 2 if DEBUG else 600
 
 
 def bayesian_or_not(s):
@@ -58,6 +58,7 @@ if __name__ == "__main__":
         if bayesian_or_not(model):
             module = VI_BNN(args, data, hyp)
             module.fit(EPOCHS)
+            module.test()
         else:
             if model == "MC_DROPOUT":
                 p_dropout = hyp['dropout']
@@ -69,5 +70,7 @@ if __name__ == "__main__":
             else:
                 raise ValueError(f"Wrong model {model}. Available : MFVI, "
                     "RADIAL, LOWRANK, MC_DROPOUT, DEEP_ENSEMBLE, HETERO_NN")
-            ... # TODO
+            module.fit(500)
+            module.test()
+            
         print(hyp)
