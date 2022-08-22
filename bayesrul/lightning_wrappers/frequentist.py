@@ -206,22 +206,26 @@ class DnnWrapper(pl.LightningModule):
             return {'loss': loss, 'label': batch[1], 'pred': pred} 
 
     def test_epoch_end(self, outputs):
-        for output in outputs:
-
-            preds = torch.tensor([])
-            labels = torch.tensor([])
-            stds = torch.tensor([])
-            for output in outputs:
-                preds = torch.cat([preds, output['pred'].cpu().detach()])
-                labels = torch.cat([labels, output['label'].cpu().detach()])
+        for i, output in enumerate(outputs):
+            if i == 0:
+                preds = output['pred'].detach()
+                labels = output['label'].detach()
                 if (self.dropout > 0) | (self.loss == 'gaussian_nll'):
-                    stds = torch.cat([stds, output['std'].cpu().detach()])
+                    stds = output['std'].detach()
+            else:
+                preds = torch.cat([preds, output['pred'].detach()])
+                labels = torch.cat([labels, output['label'].detach()])
+                if (self.dropout > 0) | (self.loss == 'gaussian_nll'):
+                    stds = torch.cat([stds, output['std'].detach()])
 
-        self.test_preds['preds'] = preds.numpy()
-        self.test_preds['labels'] = labels.numpy()
+        self.test_preds['preds'] = preds.cpu().numpy()
+        self.test_preds['labels'] = labels.cpu().numpy()
+
+        mse = F.mse_loss(preds, labels)
+        self.log("mse/test", mse)
 
         if (self.dropout > 0) | (self.loss == 'gaussian_nll'):
-            self.test_preds['stds'] = stds.numpy()
+            self.test_preds['stds'] = stds.cpu().numpy()
             mpiw = MPIW(
                 stds, 
                 labels, 
@@ -233,9 +237,7 @@ class DnnWrapper(pl.LightningModule):
                 stds,
             )
             alambda = p_alphalamba(labels, preds, stds)
-            mse = F.mse_loss(preds, labels)
             rmsce = rms_calibration_error(preds, stds, labels)
-            self.log("mse/test", mse)
             self.log("rmsce/test", rmsce)
             self.log(f"mpiw/test", mpiw)
             self.log(f"picp/test", picp)
@@ -436,8 +438,14 @@ class DeepEnsembleWrapper(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss, loc, var = self._compute_loss(batch, "val", return_pred=True)
+        (x, y) = batch
+        loc, var = self.forward(x)
+        loss = self.criterion(loc, y, var)
+        mse = F.mse_loss(loc, y)
+        
         self.log(f"{self.loss}/val", loss)
+        self.log("mse/val", mse)
+
         return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)} 
         
     def validation_epoch_end(self, outputs) -> None:
@@ -482,9 +490,9 @@ class DeepEnsembleWrapper(pl.LightningModule):
                 labels = torch.cat([labels, output['label'].detach()])
                 stds = torch.cat([stds, output['std'].detach()])
 
-        self.test_preds['preds'] = preds.numpy()
-        self.test_preds['labels'] = labels.numpy()
-        self.test_preds['stds'] = stds.numpy()
+        self.test_preds['preds'] = preds.cpu().numpy()
+        self.test_preds['labels'] = labels.cpu().numpy()
+        self.test_preds['stds'] = stds.cpu().numpy()
 
         mpiw = MPIW(
             stds,

@@ -97,3 +97,11 @@ def rms_calibration_error(y_pred, y_std, y_true, num_bins=100, prop_type='interv
 
     return rmsce
 
+
+def nasa_scoring_function(y_true, y_pred):
+    diff = y_true - y_pred 
+    alpha = torch.zeros_like(diff)
+    mask = (diff <= 0)
+    alpha = torch.where(mask, 1/8, 1/5)
+
+    return (torch.exp(alpha * torch.abs(diff))).mean()
