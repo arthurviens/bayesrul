@@ -194,6 +194,8 @@ class HeteroscedasticDNN(Inference):
 
         self.trainer.fit(self.dnn, self.data, ckpt_path=self.checkpoint_file)
 
+        return self.trainer.callback_metrics["mse/val"]
+
 
     def test(self):
         if not hasattr(self, 'dnn'):

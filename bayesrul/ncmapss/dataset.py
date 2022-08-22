@@ -79,6 +79,6 @@ class NCMAPSSDataModule(pl.LightningDataModule):
             self.datasets["test"],
             batch_size=self.batch_size,
             shuffle=False, # Important
-            num_workers=2,
+            num_workers=3,
             pin_memory=True,
         )

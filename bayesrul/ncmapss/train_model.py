@@ -72,6 +72,12 @@ if __name__ == "__main__":
                     default='normal',
                     metavar='GUIDE',
                     help='Normal or Radial Autoguide. (default: normal)')
+    parser.add_argument('--GPU',
+                    type=int,
+                    default='results/ncmapss/',
+                    metavar='GPU',
+                    required=True,
+                    help='GPU index (ex: 1)')
  
 
     args = parser.parse_args()
@@ -94,24 +100,26 @@ if __name__ == "__main__":
             }
 
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
-        module = VI_BNN(args, data, hyp)
+        module = VI_BNN(args, data, hyp, GPU=args.GPU)
         if not args.test:
             """with profile(
                 activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
                 on_trace_ready=torch.profiler.tensorboard_trace_handler('results/ncmapss/bayesian/profile/lightning_logs/')
             ) as prof:"""
 
-            module.fit(2)
+            module.fit(150)
             #prof.step
         else:
-            module._define_model()
+            pass
         module.test()
         module.epistemic_aleatoric_uncertainty(device=torch.device('cpu'))
     else:
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
         #module = DNN(args, data)
-        module = DeepEnsemble(args, data, 5)
+        module = MCDropout(args, data, 0.5)
         if not args.test:
             module.fit(3)
-        #module.test()
-        #module.epistemic_aleatoric_uncertainty(device=torch.device('cpu'))
+        module.test()
+        module.epistemic_aleatoric_uncertainty(device=torch.device('cpu'))
+
+

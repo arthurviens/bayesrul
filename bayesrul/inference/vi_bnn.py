@@ -77,8 +77,9 @@ class VI_BNN(Inference):
             raise ValueError("Can not pretrain and resume from checkpoint")
 
         if self.args.pretrain > 0 and (not checkpoint_file):
+            
             pre_net = DnnPretrainWrapper(self.data.win_length, self.data.n_features,
-                archi = self.args.archi, bias=self.args['bias'])
+                archi = self.args.archi)
             pre_trainer = pl.Trainer(gpus=[self.GPU], max_epochs=self.args.pretrain, logger=False,
                 checkpoint_callback=False)
 
@@ -92,11 +93,12 @@ class VI_BNN(Inference):
             torch.save(pre_net.net.state_dict(), self.args['pretrain_file'])
 
             
+        self.args.device = torch.device(f'cuda:{self.GPU}')
         if checkpoint_file:
-            self.args.device = torch.device(f'cuda:{self.GPU}')
             self.bnn = VIBnnWrapper.load_from_checkpoint(checkpoint_file,
                 map_location=self.args.device)
         else:
+            print(f"PASSED PARAMS : {self.args}")
             self.bnn = VIBnnWrapper(
                 self.data.win_length, 
                 self.data.n_features, 
@@ -126,7 +128,7 @@ class VI_BNN(Inference):
 
         if not hasattr(self, 'bnn'):
             self._define_model()
-        
+
         if epochs > 0:
             self.trainer.fit(self.bnn, self.data)
             if monitors:
@@ -136,6 +138,11 @@ class VI_BNN(Inference):
 
 
     def test(self):
+        if not hasattr(self, 'bnn'):
+            self._define_model()
+
+        print(f"DEVICE OF MODULE : {self.bnn.device}")
+        
         tester = pl.Trainer(
             gpus=[self.GPU], 
             log_every_n_steps=10, 

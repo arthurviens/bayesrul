@@ -32,7 +32,7 @@ class DeepEnsemble(Inference):
         GPU = 0,
         studying = False,
     ) -> None:    
-        self.name = f"deepEnsemble{n_models}_{args.model_name}_{args.archi}"
+    
         assert isinstance(GPU, int), \
             f"GPU argument should be an int, not {type(GPU)}"
         assert isinstance(n_models, int), \
@@ -57,6 +57,7 @@ class DeepEnsemble(Inference):
 
         # Merge dicts and make attributes accessible by .
         self.args = Dotdict({**(args.__dict__), **hyp})
+        del self.args['n_models']
 
         directory = "studies" if studying else "frequentist"
         self.base_log_dir = Path(args.out_path, directory, args.model_name)
@@ -75,6 +76,7 @@ class DeepEnsemble(Inference):
             self.dnn = DeepEnsembleWrapper.load_from_checkpoint(self.checkpoint_file,
                 map_location=self.args.device)
         else:
+            print(self.args)
             self.dnn = DeepEnsembleWrapper(
                 self.data.win_length, 
                 self.data.n_features, 
@@ -88,7 +90,7 @@ class DeepEnsemble(Inference):
             self._define_model()
 
         self.monitor = f"{self.dnn.loss}/val"
-        earlystopping_callback = EarlyStopping(monitor=self.monitor, patience=50)
+        #earlystopping_callback = EarlyStopping(monitor=self.monitor, patience=50)
 
         self.trainer = pl.Trainer(
             default_root_dir=self.base_log_dir,
@@ -96,9 +98,9 @@ class DeepEnsemble(Inference):
             max_epochs=epochs,
             log_every_n_steps=2,
             logger=self.logger,
-            callbacks=[
-                earlystopping_callback,
-            ],
+        #    callbacks=[
+        #        earlystopping_callback,
+        #    ],
         )
 
         self.trainer.fit(self.dnn, self.data, ckpt_path=self.checkpoint_file)

@@ -290,7 +290,7 @@ def heteroscedasticnn_objective(trial: optuna.trial.Trial) -> float:
                     hyperparams=hyperparams, GPU=GPU, studying=True)
     res = inference.fit(EPOCHS, monitors=monitors)
 
-    return res[0]
+    return res
     
 def mcmc_objective(trial: optuna.trial.Trial) -> float:
     raise NotImplementedError('Not implemented yet')

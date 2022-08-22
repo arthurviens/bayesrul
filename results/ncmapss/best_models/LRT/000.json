@@ -1,0 +1,11 @@
+{
+    "activation": "relu",
+    "archi": "bigception",
+    "fit_context": "lrt",
+    "lr": 0.001,
+    "optimizer": "adam",
+    "prior_scale": 0.08,
+    "q_scale": 0.0004,
+    "pretrain": 5,
+    "value_0": 80.49359130859375
+}

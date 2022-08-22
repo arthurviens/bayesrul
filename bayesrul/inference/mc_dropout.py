@@ -39,8 +39,7 @@ class MCDropout(Inference):
         hyperparams = None,
         GPU = 0,
         studying = False,
-    ) -> None:    
-        self.name = f"dnn_{args.model_name}_{args.archi}"
+    ) -> None:
         assert isinstance(GPU, int), \
             f"GPU argument should be an int, not {type(GPU)}"
         assert isinstance(data, pl.LightningDataModule), \
@@ -188,3 +187,4 @@ class MCDropout(Inference):
             self._define_model()
 
         return numel(self.dnn.net)
+

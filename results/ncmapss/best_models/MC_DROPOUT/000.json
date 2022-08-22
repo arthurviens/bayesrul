@@ -1,0 +1,8 @@
+{
+    "activation": "relu",
+    "archi": "bigception",
+    "lr": 0.001,
+    "optimizer": "adam",
+    "p_dropout": 0.25,
+    "value_0": 94.71187
+}
