@@ -95,10 +95,11 @@ class VI_BNN(Inference):
             
         self.args.device = torch.device(f'cuda:{self.GPU}')
         if checkpoint_file:
+            print("Loading already trained model")
+            additional_kwargs = {'pretrain': 0, 'pretrain_file': None}
             self.bnn = VIBnnWrapper.load_from_checkpoint(checkpoint_file,
-                map_location=self.args.device)
+                map_location=self.args.device, **additional_kwargs)
         else:
-            print(f"PASSED PARAMS : {self.args}")
             self.bnn = VIBnnWrapper(
                 self.data.win_length, 
                 self.data.n_features, 

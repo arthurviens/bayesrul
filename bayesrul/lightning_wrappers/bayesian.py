@@ -208,7 +208,7 @@ class VIBnnWrapper(BnnWrapper):
             dataset_size, positive_scale=False #scale=likelihood_scale
         )
         if pretrain_file is not None:
-            print("Loading pretrained model...")
+            print(f"Loading pretrained model {pretrain_file}...")
             self.net.load(pretrain_file, map_location=self._device)
             
             guide_kwargs['init_loc_fn']=tyxe.guides.PretrainedInitializer.from_net(self.net)

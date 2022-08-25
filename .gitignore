@@ -11,6 +11,7 @@ notebooks/explo*
 notebooks/*.pt
 notebooks/*test*
 bayesrul/dependencies/*
+*.svg
 
 # From https://github.com/github/gitignore/blob/main/Python.gitignore
 # Byte-compiled / optimized / DLL files
