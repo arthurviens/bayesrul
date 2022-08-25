@@ -79,6 +79,7 @@ if __name__ == "__main__":
                 p_dropout = hyp['p_dropout']
                 module = MCDropout(args, data, hyp['p_dropout'], hyp, GPU=args.GPU)
             elif model == "DEEP_ENSEMBLE":
+                EPOCHS = EPOCHS * 3
                 module = DeepEnsemble(args, data, hyp['n_models'], hyp, GPU=args.GPU)
             elif model == "HETERO_NN":
                 module = HeteroscedasticDNN(args, data, hyp, GPU=args.GPU)
