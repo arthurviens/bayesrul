@@ -77,16 +77,15 @@ class MCDropout(Inference):
             self.args.device = device
         self.checkpoint_file = get_checkpoint(self.base_log_dir, version=None)
         if self.checkpoint_file:
-            print("Loading model from checkpoint")
-            self.dnn = DnnWrapper.load_from_checkpoint(self.checkpoint_file,
-                map_location=self.args.device)
+            print(f"Loading model from checkpoint into {self.args.device}")
+            self.dnn = DnnWrapper.load_from_checkpoint(self.checkpoint_file)
         else:
             self.dnn = DnnWrapper(
                 self.data.win_length, 
                 self.data.n_features,
                 **self.args,
             )
-        self.dnn.to(self.args.device)
+        self.dnn.to_device(self.args.device)
 
         assert assert_dropout(self.dnn), "MCDropout Model has no dropout layers"
 
@@ -95,7 +94,7 @@ class MCDropout(Inference):
             self._define_model()
 
         self.monitor = f"{self.dnn.loss}/val"
-        earlystopping_callback = EarlyStopping(monitor=self.monitor, patience=50)
+        #earlystopping_callback = EarlyStopping(monitor=self.monitor, patience=50)
 
         self.trainer = pl.Trainer(
             default_root_dir=self.base_log_dir,
@@ -103,18 +102,18 @@ class MCDropout(Inference):
             max_epochs=epochs,
             log_every_n_steps=2,
             logger=self.logger,
-            callbacks=[
-                earlystopping_callback,
-            ],
+            #callbacks=[
+            #    earlystopping_callback,
+            #],
         )
 
         self.trainer.fit(self.dnn, self.data, ckpt_path=self.checkpoint_file)
 
         return self.trainer.callback_metrics["mse/val"]
 
-    def test(self):
+    def test(self, device = None):
         if not hasattr(self, 'dnn'):
-            self._define_model()
+            self._define_model(device=device)
 
         enable_dropout(self.dnn)
         
@@ -135,35 +134,43 @@ class MCDropout(Inference):
         if device is None:
             device = self.args.device
         if not hasattr(self, 'dnn'):
+            print("Redefining model ?")
             self._define_model(device=device)
-
+        
+        self.dnn.to_device(device)
+        
         dim = 0
         n = 0
         pred_loc, predictive_var, epistemic_var, aleatoric_var = [], [], [], []
-        for i, (x, y) in enumerate(tqdm(self.data.test_dataloader())):
-            x, y = x.to(device), y.to(device)
-            n += len(x)
+        with torch.no_grad():
+            for i, (x, y) in enumerate(tqdm(self.data.test_dataloader())):
+                x, y = x.to(device), y.to(device)
+                n += len(x)
 
-            outputs = []
-            for j in range(10):
-                outputs.append(self.dnn.forward(x))
-            outputs = torch.stack(outputs)
+                outputs = []
+                for j in range(10):
+                    outputs.append(self.dnn.forward(x))
+                outputs = torch.stack(outputs)
 
-            if isinstance(outputs, tuple):
-                loc, scale = outputs
-            else:
-                outputs = outputs.squeeze()
-                loc, scale = outputs[:, :, 0], outputs[:, :, 1]
-            # Sd is the PREDICTIVE VARIANCE 
-            pred_loc.append(loc.mean(axis=dim))
+                
+                if isinstance(outputs, tuple):
+                    loc, scale = outputs
+                else:
+                    outputs = outputs.squeeze()
+                    loc, scale = outputs[:, :, 0], outputs[:, :, 1]
 
-            predictive_var.append((scale**2).mean(dim).add(loc.var(dim)).detach().cpu())
-            #predictive_unc = predictive_var.sqrt()
-            epistemic_var.append(loc.var(dim).detach().cpu())
-            #epistemic_unc = epistemic_var.sqrt()
-            aleatoric_var.append((scale**2).mean(dim).detach().cpu())
-            #aleatoric_unc = aleatoric_var.sqrt()
-            del outputs
+                outputs = []
+                
+                # Sd is the PREDICTIVE VARIANCE 
+                pred_loc.append(loc.mean(axis=dim))
+                
+                
+                predictive_var.append((scale**2).mean(dim).add(loc.var(dim)).cpu())
+                #predictive_unc = predictive_var.sqrt()
+                epistemic_var.append(loc.var(dim).cpu())
+                #epistemic_unc = epistemic_var.sqrt()
+                aleatoric_var.append((scale**2).mean(dim).cpu())
+                #aleatoric_unc = aleatoric_var.sqrt()
 
         pred_loc = torch.cat(pred_loc)
         predictive_var = torch.cat(predictive_var)
@@ -176,10 +183,10 @@ class MCDropout(Inference):
         assert len(aleatoric_var) == n, f"Size ({len(aleatoric_var)}) of uncertainties should match {n}"
 
         self.results.append({ # Automatic save to file
-            'unweighted_pred_loc': pred_loc.detach().cpu().numpy(),
-            'pred_var': predictive_var.detach().cpu().numpy(),
-            'ep_var': epistemic_var.detach().cpu().numpy(),
-            'al_var': aleatoric_var.detach().cpu().numpy(),
+            'unweighted_pred_loc': pred_loc.cpu().numpy(),
+            'pred_var': predictive_var.cpu().numpy(),
+            'ep_var': epistemic_var.cpu().numpy(),
+            'al_var': aleatoric_var.cpu().numpy(),
         })
 
     def num_params(self) -> int:

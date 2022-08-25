@@ -72,8 +72,13 @@ class DnnWrapper(pl.LightningModule):
     def forward(self, x):
         return self.net(x)
 
-    def to(self, device:torch.device):
+    def get_device(self):
+        return next(self.net.parameters()).device
+
+    def to_device(self, device:torch.device):
+        #print(f"Device before to {self.get_device()}")
         self.net.to(device)
+        #print(f"Device After to {self.get_device()}")
 
     def _compute_loss(self, batch, phase, return_pred=False): 
         (x, y) = batch
@@ -355,7 +360,7 @@ class DeepEnsembleWrapper(pl.LightningModule):
         lr=1e-3,
         weight_decay=1e-3,
         activation='relu',
-        dropout=0.1,
+        dropout=0,
         device=torch.device('cuda:0'),
         **kwargs
     ):
@@ -399,10 +404,13 @@ class DeepEnsembleWrapper(pl.LightningModule):
             out = net(x)
             mus.append(out[:, 0])
             sigmas.append(out[:, 1])
+
         loc = torch.stack(mus)
         scale = torch.stack(sigmas)
+
         # Gaussian mixture formula
         var = (torch.square(scale) + torch.square(loc)).mean(0) - torch.square(loc.mean(0))
+
         return loc.mean(0), var
 
     def forward_one(self, x):
@@ -427,11 +435,12 @@ class DeepEnsembleWrapper(pl.LightningModule):
         self.log("mse/train", mse)
         return loss"""
         (x, y) = batch
-        loc, var = self.forward_one(x)
+        loc, scale = self.forward_one(x)
+        var = torch.square(scale)
         
         loss = self.criterion(loc, y, var)
         mse = F.mse_loss(loc, y)
-        rmsce = rms_calibration_error(loc, var.sqrt(), y)
+        rmsce = rms_calibration_error(loc, scale, y)
         self.log("mse/train", mse)
         self.log("rmsce/train", rmsce)
         self.log(f"{self.loss}/train", loss)
@@ -440,13 +449,14 @@ class DeepEnsembleWrapper(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         (x, y) = batch
         loc, var = self.forward(x)
+        
         loss = self.criterion(loc, y, var)
         mse = F.mse_loss(loc, y)
         
         self.log(f"{self.loss}/val", loss)
         self.log("mse/val", mse)
 
-        return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)} 
+        return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)}
         
     def validation_epoch_end(self, outputs) -> None:
         for i, output in enumerate(outputs):

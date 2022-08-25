@@ -47,7 +47,7 @@ class DeepEnsemble(Inference):
             'bias' : True,
             'lr' : 1e-3,
             'device' : torch.device(f"cuda:{self.GPU}"),
-            'dropout' : 0.1,
+            'dropout' : 0,
             'out_size' : 2,
         }
             
@@ -57,7 +57,10 @@ class DeepEnsemble(Inference):
 
         # Merge dicts and make attributes accessible by .
         self.args = Dotdict({**(args.__dict__), **hyp})
-        del self.args['n_models']
+        try:
+            del self.args['n_models']
+        except KeyError:
+            pass
 
         directory = "studies" if studying else "frequentist"
         self.base_log_dir = Path(args.out_path, directory, args.model_name)
@@ -125,8 +128,8 @@ class DeepEnsemble(Inference):
         self.results.save(self.dnn.test_preds)
 
 
-    def epistemic_aleatoric_uncertainty(self):
-        ...
+    def epistemic_aleatoric_uncertainty(self, device=None):
+        raise NotImplementedError("Deep Ensembles can't model epistemic uncertainties.")
 
     def num_params(self) -> int:
         if not hasattr(self, 'dnn'):

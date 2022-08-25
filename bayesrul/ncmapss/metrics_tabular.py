@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -14,10 +15,10 @@ from bayesrul.utils.metrics import (
 from bayesrul.utils.plotting import ResultSaver
 
 
-COLUMNS = ["RMSE-", "NLL-", "RMSCE-", "MPIW", "PICP"]
+COLUMNS = ["RMSE-", "NLL-", "RMSCE-", "MPIW-", "|PICP-CI|-"]
 
 
-def get_all_metrics(names, bayesian=True):
+def get_all_metrics(names):
 
     if isinstance(names, str):
         names = [names]
@@ -26,7 +27,7 @@ def get_all_metrics(names, bayesian=True):
 
     for name in names:
         try:
-            if bayesian:
+            if bayesian_or_not(name):
                 p = Path("results/ncmapss/bayesian", name)
             else:
                 p = Path("results/ncmapss/frequentist", name)
@@ -39,6 +40,7 @@ def get_all_metrics(names, bayesian=True):
             
             mpiw = MPIW(std, y_true, normalized=True).cpu().item()
             picp = PICP(y_true, y_pred, std).cpu().item()
+            picpci = np.abs(picp - 0.6827)
             rmsce = rms_calibration_error(y_pred, std, y_true).cpu().item()
             nll = gaussian_nll_loss(
                 y_pred, y_true, std
@@ -48,7 +50,7 @@ def get_all_metrics(names, bayesian=True):
             rmse = torch.sqrt(((y_true - y_pred)**2).mean()).cpu().item()
 
             row = pd.Series(
-                data = [rmse, nll, rmsce, mpiw, picp],
+                data = [rmse, nll, rmsce, mpiw, picpci],
                 index = COLUMNS,
                 name=name
             )
@@ -60,8 +62,21 @@ def get_all_metrics(names, bayesian=True):
     return df
 
 
-def get_dirs_startingby(substr, bayesian=True):
-    if bayesian:
+def bayesian_or_not(s):
+    #s = '_'.join(s.split('_')[:-1])
+    if (re.search(r'\d+$', s)):
+        s = '_'.join(s.split('_')[:-1])
+    if s.upper() in ["MFVI", "RADIAL", "LOWRANK", "LRT", "FLIPOUT"]:
+        return True
+    elif s.upper() in ["MC_DROPOUT", "DEEP_ENSEMBLE", "HETERO_NN"]:
+        return False
+    else:
+        raise ValueError(f"Unknow model {s}. Choose from mfvi, lrt, flipout, "
+            "radial, lowrank, mc_dropout, deep_ensemble, hetero_nn ")
+
+
+def get_dirs_startingby(substr):
+    if bayesian_or_not(substr):
         p = "results/ncmapss/bayesian"
     else:
         p = "results/ncmapss/frequentist"
@@ -99,7 +114,17 @@ def fuse_by_category(cats, return_all=False):
     return df_means, df_stds
 
 
+def latex_formatted(df_mean, df_std):
+    s = df_mean.style.highlight_min(subset=["RMSE-", "NLL-", "RMSCE-", "MPIW-", "|PICP-CI|-"], 
+            props="textbf:--rwrap;", axis=0)
+    s = s.format(precision=3)
+
+    return s.to_latex(hrules=True).replace('_', ' ')
+
+
 if __name__ == "__main__":
     #df = get_all_metrics(["FLIPOUT", "LRT_nopretrain", 'RADIAL'])
     #print(df.to_latex())
-    fuse_by_category(['LRT', 'FLIPOUT', 'RADIAL'])
+    m, sd = fuse_by_category(['LRT', 'FLIPOUT', 'RADIAL', 'MC_DROPOUT', 
+                                'DEEP_ENSEMBLE', 'HETERO_NN'])
+    print(latex_formatted(m, sd))
