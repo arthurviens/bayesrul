@@ -1,0 +1,8 @@
+{
+    "activation": "relu",
+    "archi": "bigception",
+    "lr": 0.001,
+    "optimizer": "adam",
+    "n_models": 5,
+    "value_0": 136.82382202148438
+}

@@ -3,6 +3,7 @@ import pandas as pd
 
 import argparse
 import json
+import torch
 
 from bayesrul.inference.vi_bnn import VI_BNN
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
@@ -15,6 +16,7 @@ EPOCHS = 2 if DEBUG else 500
 
 
 def bayesian_or_not(s):
+    #s = '_'.join(s.split('_')[:-1])
     if s.upper() in ["MFVI", "RADIAL", "LOWRANK", "LRT", "FLIPOUT"]:
         return True
     elif s.upper() in ["MC_DROPOUT", "DEEP_ENSEMBLE", "HETERO_NN"]:
@@ -35,39 +37,60 @@ if __name__ == "__main__":
                     default='results/ncmapss/',
                     metavar='OUT',
                     help='Directory where to store models and logs')
+    parser.add_argument('--model',
+                    type=str,
+                    default='LRT',
+                    metavar='MODEL',
+                    required=True,
+                    help='Model and name (ex: LRT_001)')
+    parser.add_argument('--GPU',
+                    type=int,
+                    default='results/ncmapss/',
+                    metavar='GPU',
+                    required=True,
+                    help='GPU index (ex: 1)')
+    
     args = parser.parse_args()
 
-    models = ['LRT']
+
     path = "results/ncmapss/best_models"
 
-    for model in models:
-        path = Path(path, model)
-        ls = sorted(list(path.glob('*.json')))
+    model = '_'.join(args.model.split('_')[:-1])
+    model_path = Path(path, model)
+    ls = sorted(list(model_path.glob('*.json')))
 
-        with open(ls[0], 'r') as f:
-            hyp = json.load(f)
-            hyp['GPU'] = 0
-        try:
-            del hyp['value_0']; del hyp['value_1']
-        except KeyError:
-            pass
+    with open(ls[0], 'r') as f:
+        hyp = json.load(f)
+    try:
+        del hyp['value_0']; del hyp['value_1']
+    except KeyError:
+        pass
 
-        args.model_name = model
+    for i in range(1):
+        #args.model_name = model + f"_{i:03d}"
+        args.model_name = args.model
         data = NCMAPSSDataModule(args.data_path, batch_size=10000)
 
         if bayesian_or_not(model):
-            module = VI_BNN(args, data, hyp)
-            module.fit(EPOCHS)
+            hyp['pretrain'] = 5
+            module = VI_BNN(args, data, hyp, GPU=args.GPU)
         else:
             if model == "MC_DROPOUT":
-                p_dropout = hyp['dropout']
-                module = MCDropout(args, data, p_dropout, hyp)
+                p_dropout = hyp['p_dropout']
+                module = MCDropout(args, data, hyp['p_dropout'], hyp, GPU=args.GPU)
             elif model == "DEEP_ENSEMBLE":
-                module = DeepEnsemble(args, data, 5, hyp)
+                module = DeepEnsemble(args, data, hyp['n_models'], hyp, GPU=args.GPU)
             elif model == "HETERO_NN":
-                module = HeteroscedasticDNN(args, data, hyp)
+                module = HeteroscedasticDNN(args, data, hyp, GPU=args.GPU)
             else:
                 raise ValueError(f"Wrong model {model}. Available : MFVI, "
-                    "RADIAL, LOWRANK, MC_DROPOUT, DEEP_ENSEMBLE, HETERO_NN")
-            ... # TODO
-        print(hyp)
+                    "RADIAL, LOWRANK, MC-DROPOUT, DEEP-ENSEMBLE, HETERO-NN")
+        
+        
+        module.fit(EPOCHS)
+        module.test()
+        try:
+            module.epistemic_aleatoric_uncertainty(device=torch.device('cpu'))
+        except Exception:
+            pass
+            

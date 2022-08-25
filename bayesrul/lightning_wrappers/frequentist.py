@@ -43,7 +43,7 @@ class DnnWrapper(pl.LightningModule):
             self.net = InceptionModel(win_length, n_features, out_size=out_size,
                 dropout=dropout, activation=activation, bias=bias).to(device)
         elif archi == "bigception":
-            self.net = BigCeption(n_features, activation=activation, 
+            self.net = BigCeption(win_length, n_features, activation=activation, 
                 dropout=dropout, out_size=out_size, bias=bias).to(device)
         else:
             raise RuntimeError(f"Model architecture {archi} not implemented")
@@ -72,8 +72,13 @@ class DnnWrapper(pl.LightningModule):
     def forward(self, x):
         return self.net(x)
 
-    def to(self, device:torch.device):
+    def get_device(self):
+        return next(self.net.parameters()).device
+
+    def to_device(self, device:torch.device):
+        #print(f"Device before to {self.get_device()}")
         self.net.to(device)
+        #print(f"Device After to {self.get_device()}")
 
     def _compute_loss(self, batch, phase, return_pred=False): 
         (x, y) = batch
@@ -206,22 +211,26 @@ class DnnWrapper(pl.LightningModule):
             return {'loss': loss, 'label': batch[1], 'pred': pred} 
 
     def test_epoch_end(self, outputs):
-        for output in outputs:
-
-            preds = torch.tensor([])
-            labels = torch.tensor([])
-            stds = torch.tensor([])
-            for output in outputs:
-                preds = torch.cat([preds, output['pred'].cpu().detach()])
-                labels = torch.cat([labels, output['label'].cpu().detach()])
+        for i, output in enumerate(outputs):
+            if i == 0:
+                preds = output['pred'].detach()
+                labels = output['label'].detach()
                 if (self.dropout > 0) | (self.loss == 'gaussian_nll'):
-                    stds = torch.cat([stds, output['std'].cpu().detach()])
+                    stds = output['std'].detach()
+            else:
+                preds = torch.cat([preds, output['pred'].detach()])
+                labels = torch.cat([labels, output['label'].detach()])
+                if (self.dropout > 0) | (self.loss == 'gaussian_nll'):
+                    stds = torch.cat([stds, output['std'].detach()])
 
-        self.test_preds['preds'] = preds.numpy()
-        self.test_preds['labels'] = labels.numpy()
+        self.test_preds['preds'] = preds.cpu().numpy()
+        self.test_preds['labels'] = labels.cpu().numpy()
+
+        mse = F.mse_loss(preds, labels)
+        self.log("mse/test", mse)
 
         if (self.dropout > 0) | (self.loss == 'gaussian_nll'):
-            self.test_preds['stds'] = stds.numpy()
+            self.test_preds['stds'] = stds.cpu().numpy()
             mpiw = MPIW(
                 stds, 
                 labels, 
@@ -233,9 +242,7 @@ class DnnWrapper(pl.LightningModule):
                 stds,
             )
             alambda = p_alphalamba(labels, preds, stds)
-            mse = F.mse_loss(preds, labels)
             rmsce = rms_calibration_error(preds, stds, labels)
-            self.log("mse/test", mse)
             self.log("rmsce/test", rmsce)
             self.log(f"mpiw/test", mpiw)
             self.log(f"picp/test", picp)
@@ -353,7 +360,7 @@ class DeepEnsembleWrapper(pl.LightningModule):
         lr=1e-3,
         weight_decay=1e-3,
         activation='relu',
-        dropout=0.1,
+        dropout=0,
         device=torch.device('cuda:0'),
         **kwargs
     ):
@@ -373,8 +380,8 @@ class DeepEnsembleWrapper(pl.LightningModule):
                 dropout=dropout, activation=activation, bias=bias).to(device)
                 for i in range(n_models)]
         elif archi == "bigception":
-            self.nets = [BigCeption(n_features, activation=activation, dropout=dropout, 
-                out_size=out_size, bias=bias).to(device)
+            self.nets = [BigCeption(win_length, n_features, activation=activation, 
+                dropout=dropout, out_size=out_size, bias=bias).to(device)
                 for i in range(n_models)]
         else:
             raise RuntimeError(f"Model architecture {archi} not implemented")
@@ -397,10 +404,13 @@ class DeepEnsembleWrapper(pl.LightningModule):
             out = net(x)
             mus.append(out[:, 0])
             sigmas.append(out[:, 1])
+
         loc = torch.stack(mus)
         scale = torch.stack(sigmas)
+
         # Gaussian mixture formula
         var = (torch.square(scale) + torch.square(loc)).mean(0) - torch.square(loc.mean(0))
+
         return loc.mean(0), var
 
     def forward_one(self, x):
@@ -425,65 +435,74 @@ class DeepEnsembleWrapper(pl.LightningModule):
         self.log("mse/train", mse)
         return loss"""
         (x, y) = batch
-        loc, var = self.forward_one(x)
+        loc, scale = self.forward_one(x)
+        var = torch.square(scale)
         
         loss = self.criterion(loc, y, var)
         mse = F.mse_loss(loc, y)
-        rmsce = rms_calibration_error(loc, var.sqrt(), y)
+        rmsce = rms_calibration_error(loc, scale, y)
         self.log("mse/train", mse)
         self.log("rmsce/train", rmsce)
         self.log(f"{self.loss}/train", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss, loc, var = self._compute_loss(batch, "val", return_pred=True)
+        (x, y) = batch
+        loc, var = self.forward(x)
+        
+        loss = self.criterion(loc, y, var)
+        mse = F.mse_loss(loc, y)
+        
         self.log(f"{self.loss}/val", loss)
-        return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)} 
+        self.log("mse/val", mse)
+
+        return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)}
         
     def validation_epoch_end(self, outputs) -> None:
-        if self.current_epoch % 5 == 0:
-            preds = torch.tensor([])
-            labels = torch.tensor([])
-            stds = torch.tensor([])
-            for output in outputs:
-                preds = torch.cat([preds, output['pred'].cpu().detach()])
-                labels = torch.cat([labels, output['label'].cpu().detach()])
-                stds = torch.cat([stds, output['std'].cpu().detach()])
+        for i, output in enumerate(outputs):
+            if i == 0:
+                preds = output['pred'].detach()
+                labels = output['label'].detach()
+                stds = output['std'].detach()
+            else:
+                preds = torch.cat([preds, output['pred'].detach()])
+                labels = torch.cat([labels, output['label'].detach()])
+                stds = torch.cat([stds, output['std'].detach()])
 
-            mpiw = MPIW(
-                preds, labels, normalized=True
-            )
-            picp = PICP(
-                labels, preds, stds
-            )
-            alambda = p_alphalamba(labels, preds, stds)
-            mse = F.mse_loss(preds, labels)
-            rmsce = rms_calibration_error(preds, stds, labels)
-            self.log("mse/val", mse)
-            self.log("rmsce/val", rmsce)
-            self.log(f"mpiw/val", mpiw)
-            self.log(f"picp/val", picp)
-            self.log(f"alambda/val", alambda)
+        mpiw = MPIW(
+            preds, labels, normalized=True
+        )
+        picp = PICP(
+            labels, preds, stds
+        )
+        alambda = p_alphalamba(labels, preds, stds)
+        mse = F.mse_loss(preds, labels)
+        
+        rmsce = rms_calibration_error(preds, stds, labels)
+        self.log("mse/val", mse)
+        self.log("rmsce/val", rmsce)
+        self.log(f"mpiw/val", mpiw)
+        self.log(f"picp/val", picp)
+        self.log(f"alambda/val", alambda)
 
     def test_step(self, batch, batch_idx):
         loss, loc, var = self._compute_loss(batch, "test", return_pred=True)
         return {'loss': loss, 'label': batch[1], 'pred': loc, 'std': torch.sqrt(var)} 
 
     def test_epoch_end(self, outputs):
-        for output in outputs:
+        for i, output in enumerate(outputs):
+            if i == 0:
+                preds = output['pred'].detach()
+                labels = output['label'].detach()
+                stds = output['std'].detach()
+            else:
+                preds = torch.cat([preds, output['pred'].detach()])
+                labels = torch.cat([labels, output['label'].detach()])
+                stds = torch.cat([stds, output['std'].detach()])
 
-            preds = torch.tensor([])
-            labels = torch.tensor([])
-            stds = torch.tensor([])
-            for output in outputs:
-                preds = torch.cat([preds, output['pred'].cpu().detach()])
-                labels = torch.cat([labels, output['label'].cpu().detach()])
-                if self.dropout > 0:
-                    stds = torch.cat([stds, output['std'].cpu().detach()])
-
-        self.test_preds['preds'] = preds.numpy()
-        self.test_preds['labels'] = labels.numpy()
-        self.test_preds['stds'] = stds.numpy()
+        self.test_preds['preds'] = preds.cpu().numpy()
+        self.test_preds['labels'] = labels.cpu().numpy()
+        self.test_preds['stds'] = stds.cpu().numpy()
 
         mpiw = MPIW(
             stds,

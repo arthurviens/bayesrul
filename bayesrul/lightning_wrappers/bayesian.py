@@ -51,19 +51,20 @@ class BnnWrapper(pl.LightningModule):
         super().__init__()
         self.dataset_size = dataset_size
         self.lr = lr
+        self._device = device
 
         if archi == "linear":
             self.net = Linear(win_length, n_features, activation=activation,
-                bias=bias, out_size=out_size).to(device=device)
+                bias=bias, out_size=out_size).to(device=self._device)
         elif archi == "conv":
             self.net = Conv(win_length, n_features, activation=activation, 
-                bias=bias, out_size=out_size).to(device=device)
+                bias=bias, out_size=out_size).to(device=self._device)
         elif archi == "inception":
             self.net = InceptionModel(win_length, n_features, out_size=out_size,
-                activation=activation, bias=bias).to(device=device)
+                activation=activation, bias=bias).to(device=self._device)
         elif archi == "bigception":
             self.net = BigCeption(win_length, n_features, activation=activation, 
-                out_size=out_size, bias=bias).to(device=device)
+                out_size=out_size, bias=bias).to(device=self._device)
         else:
             raise ValueError(f"Model architecture {archi} not implemented")
 
@@ -157,6 +158,8 @@ class VIBnnWrapper(BnnWrapper):
             lr=lr,
             device=device,
         )
+        
+        print(f"Initializing network {archi} on {self._device}")
         self.save_hyperparameters()
         closed_form_kl = True
 
@@ -196,8 +199,8 @@ class VIBnnWrapper(BnnWrapper):
         
         self.prior = tyxe.priors.IIDPrior(
             dist.Normal(
-                torch.tensor(float(prior_loc), device=device), 
-                torch.tensor(float(prior_scale), device=device),
+                torch.tensor(float(prior_loc), device=self._device), 
+                torch.tensor(float(prior_scale), device=self._device),
             ), **prior_kwargs
         )
         
@@ -205,8 +208,8 @@ class VIBnnWrapper(BnnWrapper):
             dataset_size, positive_scale=False #scale=likelihood_scale
         )
         if pretrain_file is not None:
-            print("Resuming training...")
-            self.net.load(pretrain_file, map_location=device)
+            print("Loading pretrained model...")
+            self.net.load(pretrain_file, map_location=self._device)
             
             guide_kwargs['init_loc_fn']=tyxe.guides.PretrainedInitializer.from_net(self.net)
             if last_layer:

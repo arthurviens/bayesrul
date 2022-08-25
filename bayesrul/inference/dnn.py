@@ -127,8 +127,7 @@ class HeteroscedasticDNN(Inference):
         hyperparams = None,
         GPU = 1,
         studying = False,
-    ) -> None:    
-        self.name = f"dnn_{args.model_name}_{args.archi}"
+    ) -> None:
         assert isinstance(GPU, int), \
             f"GPU argument should be an int, not {type(GPU)}"
         assert isinstance(data, pl.LightningDataModule), \
@@ -179,7 +178,7 @@ class HeteroscedasticDNN(Inference):
             self._define_model()
 
         self.monitor = f"{self.dnn.loss}/val"
-        earlystopping_callback = EarlyStopping(monitor=self.monitor, patience=50)
+        #earlystopping_callback = EarlyStopping(monitor=self.monitor, patience=50)
 
         self.trainer = pl.Trainer(
             default_root_dir=self.base_log_dir,
@@ -187,12 +186,14 @@ class HeteroscedasticDNN(Inference):
             max_epochs=epochs,
             log_every_n_steps=2,
             logger=self.logger,
-            callbacks=[
-                earlystopping_callback,
-            ],
+            #callbacks=[
+            #    earlystopping_callback,
+            #],
         )
 
         self.trainer.fit(self.dnn, self.data, ckpt_path=self.checkpoint_file)
+
+        return self.trainer.callback_metrics["mse/val"]
 
 
     def test(self):
@@ -217,6 +218,7 @@ class HeteroscedasticDNN(Inference):
 
     def num_params(self) -> int:
         return numel(self.dnn.net)
+
 
 
 

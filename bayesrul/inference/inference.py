@@ -47,7 +47,7 @@ class Inference(ABC):
         ...
 
     @abstractmethod
-    def epistemic_aleatoric_uncertainty(self):
+    def epistemic_aleatoric_uncertainty(self, device=None):
         ...
 
     @property
