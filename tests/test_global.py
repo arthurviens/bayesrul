@@ -3,7 +3,7 @@ import pytest
 from pathlib import Path
 from bayesrul import __version__
 from bayesrul.utils.lmdb_utils import make_slice
-from bayesrul.utils.plotting import ResultSaver
+from bayesrul.utils.post_process import ResultSaver
 
 
 class DangerousOperationError(Exception):
