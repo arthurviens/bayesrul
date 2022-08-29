@@ -122,7 +122,7 @@ if __name__ == "__main__":
         #module = DNN(args, data)
         module = MCDropout(args, data, 0.25)
         if not args.test:
-            module.fit(3)
+            module.fit(100)
         module.test(device = torch.device(f"cuda:{args.GPU}"))
         module.epistemic_aleatoric_uncertainty(device=torch.device(f"cuda:{args.GPU}"))
 
