@@ -14,7 +14,7 @@ from bayesrul.utils.miscellaneous import (
     enable_dropout,
     numel,
 )
-from bayesrul.utils.plotting import ResultSaver
+from bayesrul.utils.post_process import ResultSaver
 from tqdm import tqdm
 
 

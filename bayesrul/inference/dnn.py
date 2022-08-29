@@ -9,12 +9,12 @@ from pytorch_lightning.callbacks import EarlyStopping
 from bayesrul.inference.inference import Inference
 from bayesrul.lightning_wrappers.frequentist import DnnWrapper
 from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger, Dotdict, numel
-from bayesrul.utils.plotting import ResultSaver
+from bayesrul.utils.post_process import ResultSaver
 
 
 class HomoscedasticDNN(Inference):
     """
-    Standard frequentist neural networks
+    Standard frequentist neural networks inference class
     """
 
     def __init__(

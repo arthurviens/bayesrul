@@ -8,17 +8,21 @@ from bayesrul.inference.deep_ensemble import DeepEnsemble
 from torch.profiler import profile, record_function, ProfilerActivity
 from torch.profiler import schedule
 
+import torch
+import argparse
+
+"""
+Utility file to run tests, it allows to launch a training of a specific model
+with specific options
+"""
+
+
 my_schedule = schedule(
     skip_first=1,
     wait=0,
     warmup=1,
     active=5,
     repeat=1)
-
-
-import torch
-
-import argparse
 
 
 if __name__ == "__main__":

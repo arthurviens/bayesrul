@@ -12,6 +12,7 @@ class Inference(ABC):
             inference = ...
             inference.fit(2)
             inference.test()
+            inference.epistemic_aleatoric_uncertainty
     """
     name: str = None
 

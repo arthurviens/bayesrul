@@ -1,3 +1,6 @@
+from pathlib import Path
+from typing import List, Union, Dict
+
 import numpy as np
 import pandas as pd 
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
@@ -10,6 +13,38 @@ from typing import List
 from math import factorial
 
 import torch
+
+
+class ResultSaver:
+    def __init__(self, path: str, filename: str = None) -> None:
+        self.path = Path(path, 'predictions')
+        self.path.mkdir(exist_ok=True)
+        if filename is None:
+            filename = 'results.parquet'
+        self.file_path = Path(self.path, filename)
+
+    def save(self, df: pd.DataFrame) -> None:
+        if isinstance(df, dict):
+            df = pd.DataFrame(df)
+        assert isinstance(df, pd.DataFrame), f"{type(df)} is not a dataframe"
+        df.to_parquet(self.file_path)
+
+    def load(self) -> pd.DataFrame:
+        return pd.read_parquet(self.file_path)
+
+    def append(self, series: Union[List[pd.Series], Dict[str, np.array]]) -> None:
+        if isinstance(series, list):
+            series = pd.concat(series, axis=1)
+        if isinstance(series, dict):
+            series = pd.DataFrame(series)
+        df = self.load()
+        df = pd.concat([df, series], axis=1)
+        assert isinstance(df, pd.DataFrame), f"{type(df)} is not a dataframe"
+        s = df.isna().sum()
+        if isinstance(s, pd.Series): s = s.sum()
+        assert s == 0, "NaNs introduced in results dataframe"
+        self.save(df)
+
 
 def findNewRul(arr: np.array) -> np.array:
     """ Finds the indexes to separate the different engines in test set.
@@ -213,16 +248,39 @@ def savitzky_golay(y, window_size, order, deriv=0, rate=1):
 
 def smooth_some_columns(
     df: pd.DataFrame, 
-    cols, 
-    bandwidth=0.01,
+    cols: List[str], 
+    bandwidth: Union[List[float], float]= 0.01,
 ) -> pd.DataFrame:
+    """ Smoothes with a filter some of the time series of a dataframe
+    returns a dataframe with extra columns with '_smooth' appended when needed
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataframe of results (test preds, labels...)  
+
+    cols : list of str
+        which columns to smooth.
+
+    bandwith : float or list of float
+        Bandwith to control the smoothness degree. Length must be equal to cols'
+
+    Returns : pd.DataFrame
+        df with a extra columns
+    
+    Raises
+    -------
+    ValueError
+        When bandwidth is not correctly specified
+    
+    """
     lowess = sm.nonparametric.lowess
     if isinstance(bandwidth, int):
         bandwidths = [bandwidth] * len(cols)
     elif isinstance(bandwidth, list) & (len(bandwidth) == len(cols)):
         bandwidths = bandwidth
     else:
-        raise RuntimeError(f"'Bandwidth' parameter must be int or list of same size as cols")
+        raise ValueError(f"'Bandwidth' parameter must be int or list of same size as cols")
 
     pd.options.mode.chained_assignment = None
 
@@ -241,6 +299,8 @@ def smooth_some_columns(
 
 
 def get_ds_unit(engine):
+    """ Extracts ds_id and unit_id + perform some checks    
+    """
     ds_id = engine['ds_id'].unique()
     unit_id = engine['unit_id'].unique()
 
@@ -250,6 +310,8 @@ def get_ds_unit(engine):
 
 
 def post_process(df: pd.DataFrame, data_path='../data/ncmapss', sigma=1.96) -> pd.DataFrame:
+    """ Post processing of raw saved results, to add test set info, relative lifetime...
+    """
     assert isinstance(sigma, int) or isinstance(sigma, float), \
         f"{sigma} has to be int or float"
     sigma = torch.tensor([sigma])

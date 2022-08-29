@@ -15,6 +15,15 @@ import argparse
 import optuna
 import json
 
+
+""" 
+Optimizes models for MSE and RMSCE in a bi-objective manner with Optuna
+Takes an huge amount of computing and time.
+
+This was not used for the article.
+"""
+
+
 debug = False
 EPOCHS = 150 if not debug else 2
 

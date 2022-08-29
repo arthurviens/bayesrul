@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import List, Tuple
 import os
 import re
 
@@ -10,15 +11,29 @@ import torch
 
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
 from bayesrul.utils.metrics import (
-    PICP, MPIW, p_alphalamba, rms_calibration_error, nasa_scoring_function
+    PICP, MPIW, rms_calibration_error
 )
-from bayesrul.utils.plotting import ResultSaver
+from bayesrul.utils.post_process import ResultSaver
 
+"""
+Reads the results of trainings and aggregates all of them to create a single
+LaTeX table for reports.
+"""
 
 COLUMNS = ["RMSE-", "NLL-", "RMSCE-", "MPIW-", "|PICP-CI|-"]
 
 
-def get_all_metrics(names):
+def get_all_metrics(names: List[str]) -> pd.DataFrame:
+    """ Computes all the wanted metrics for specific result directories
+
+    Parameters
+    ----------
+    names : list of str
+        Names of the results to compute (LRT_000, LRT_001...)  
+
+    Returns : pd.DataFrame
+        df with a extra columns (ds_id, traj_id, win_id and engine_id)
+    """
 
     if isinstance(names, str):
         names = [names]
@@ -56,15 +71,31 @@ def get_all_metrics(names):
             )
             df.loc[name] = row
             #print(f"NASA : {nasa}")
-        except FileNotFoundError:
-            pass
+        except FileNotFoundError as e:
+            print(f"In get_all_metrics, file not found {e}. Ignoring.")
 
     return df
 
 
-def bayesian_or_not(s):
-    #s = '_'.join(s.split('_')[:-1])
-    if (re.search(r'\d+$', s)):
+def bayesian_or_not(s: str) -> bool:
+    """ Is the model a bayesian model or frequentist model?
+
+    Parameters
+    ----------
+    s : str
+        Model Name
+
+    Returns : bool
+        True if the model is bayesian, False otherwise
+    
+    Raises
+    -------
+    ValueError:
+        When model is unknown
+    
+    """
+    
+    if (re.search(r'\d+$', s)): # Removes numbers at the end (LRT_001 -> LRT)
         s = '_'.join(s.split('_')[:-1])
     if s.upper() in ["MFVI", "RADIAL", "LOWRANK", "LRT", "FLIPOUT"]:
         return True
@@ -75,7 +106,19 @@ def bayesian_or_not(s):
             "radial, lowrank, mc_dropout, deep_ensemble, hetero_nn ")
 
 
-def get_dirs_startingby(substr):
+def get_dirs_startingby(substr: str) -> List[str]:
+    """ Gets all directory paths starting by a specific string
+        If there exists directories LRT_000, LRT_001, LRT_002, calling this function
+        with substr='LRT' will return all 3 paths
+
+    Parameters
+    ----------
+    substr : str
+        String to find
+
+    Returns : List of strings
+        Paths to the directories
+    """
     if bayesian_or_not(substr):
         p = "results/ncmapss/bayesian"
     else:
@@ -87,7 +130,22 @@ def get_dirs_startingby(substr):
     return list(filtered)
 
 
-def fuse_by_category(cats, return_all=False):
+def fuse_by_category(cats: List[str]) -> Tuple[pd.DataFrame]:
+    """
+    Parameters
+    ----------
+    cats : List of str
+        Categories to fuse  
+
+    Returns : pd.DataFrame, pd.DataFrame
+        means and stds of the categories on all metrics of COLUMNS
+    
+    Raises
+    -------
+    RuntimeError
+        When only one of (mean, std) is computed and not the other
+
+    """
     df_means = pd.DataFrame([], columns=COLUMNS)
     df_stds = pd.DataFrame([], columns=COLUMNS)
 
@@ -114,8 +172,9 @@ def fuse_by_category(cats, return_all=False):
     return df_means, df_stds
 
 
-def latex_formatted(df_mean, df_std):
-    s = df_mean.style.highlight_min(subset=["RMSE-", "NLL-", "RMSCE-", "MPIW-", "|PICP-CI|-"], 
+def latex_formatted(df_mean: pd.DataFrame, df_std: pd.DataFrame) -> str:
+    """ Formats Pandas DataFrame into LaTeX table code """
+    s = df_mean.style.highlight_min(subset=COLUMNS, 
             props="textbf:--rwrap;", axis=0)
     s = s.format(precision=3)
 

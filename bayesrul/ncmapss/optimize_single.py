@@ -6,18 +6,38 @@ from bayesrul.inference import (
 )
 
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
-from bayesrul.utils.miscellaneous import simple_cull, select_pareto
 from pathlib import Path
 
 import torch
 import pyro
 import argparse
 import optuna
-import json
 
 debug = False
 EPOCHS = 150 if not debug else 2
 
+
+"""
+Launches Optuna search for single objective optimization (even if the training 
+loss is not MSE, the validation loss on which we optimize across trials is MSE)
+
+All implemented models can be launched for optimization
+Trials are stored into a study 
+
+Example on how to launch:
+python -m bayesrul.ncmapss.optimize_single --model lrt --study-name LRT --GPU 0 --sampler TPE
+"""
+
+
+"""
+'Objective' functions are implemented, launched by Optuna for hyperparam search
+They can:
+    - Define which parameters and which space to search
+    - Initialize data loader 
+    - Initializes model
+    - Fits the model
+    - Get the result
+"""
 
 def mfvi_objective(trial: optuna.trial.Trial) -> float:
     pyro.clear_param_store()

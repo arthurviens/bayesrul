@@ -4,6 +4,13 @@ import torch.nn.functional as F
 from torchinfo import summary
 
 
+"""
+'D3' Architecture implementation, by Benker & al
+https://www.sciencedirect.com/science/article/pii/S0278612520301928?via%3Dihub
+
++ Another architecture we tried
+"""
+
 class Conv(nn.Module):
     def __init__(self, win_length, n_features, activation='relu',
                 dropout=0, bias=True, out_size=2):
@@ -126,9 +133,11 @@ class Conv2(nn.Module):
         self.thresh = nn.Threshold(1e-9, 1e-9)
 
     def save(self, path: str) -> None:
+        """ Saves its state dict at path """
         torch.save(self.state_dict(), path)
 
     def load(self, path: str, map_location = torch.device('cuda:0')):
+        """ Loads the state dict at path """
         state_dict = torch.load(path, map_location=map_location)
         self.load_state_dict(state_dict)
 

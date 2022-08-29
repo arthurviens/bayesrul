@@ -12,15 +12,14 @@ from bayesrul.utils.miscellaneous import (
     get_checkpoint, 
     TBLogger, 
     Dotdict,
-    enable_dropout,
     numel,
 )
-from bayesrul.utils.plotting import ResultSaver
+from bayesrul.utils.post_process import ResultSaver
 
 
 class DeepEnsemble(Inference):
     """
-    Deep Ensemble neural networks
+    Deep Ensemble neural networks inference class
     """
 
     def __init__(

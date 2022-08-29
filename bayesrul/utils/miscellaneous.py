@@ -47,6 +47,7 @@ def weights_init(m):
 
 
 def get_checkpoint(path, version=None) -> None:
+    """ Gets the checkpoint filename and path of a log directory """
     try:
         path = os.path.join(os.getcwd(), path, 'lightning_logs')
         ls = sorted(os.listdir(path), reverse = True)
@@ -122,5 +123,6 @@ def simple_cull(inputPoints):
 
 
 def select_pareto(df, paretoSet):
+    """ Selection of pareto optimal set """
     arr = np.array([[x1, x2] for x1, x2 in list(paretoSet)])
     return df[(df.values_0.isin(arr[:, 0])) & (df.values_1.isin(arr[:, 1]))]

@@ -15,6 +15,13 @@ import numpy as np
 
 
 class DnnWrapper(pl.LightningModule):
+    """
+    Pytorch Lightning frequentist models wrapper
+    This class is used by frequentist models, MC_Dropout and Heteroscedastic NNs
+
+    It implements various functions for Pytorch Lightning to manage train, test,
+    validation, logging...
+    """
     def __init__(
         self,
         win_length,
@@ -264,6 +271,11 @@ class DnnWrapper(pl.LightningModule):
 
         
 class DnnPretrainWrapper(pl.LightningModule):
+    """
+    Class used by BNNs to pretrain their weights. This class is instantiated,
+    trained for X epochs and then it stores its weights in the log directory.
+    VIBnnWrapper then loads the weights and starts the Bayesian training
+    """
     def __init__(
         self,
         win_length,

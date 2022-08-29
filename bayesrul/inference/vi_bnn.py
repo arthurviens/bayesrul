@@ -9,11 +9,9 @@ from bayesrul.inference.inference import Inference
 from bayesrul.lightning_wrappers.frequentist import DnnPretrainWrapper
 from bayesrul.lightning_wrappers.bayesian import VIBnnWrapper
 from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger, Dotdict
-from bayesrul.utils.plotting import ResultSaver
+from bayesrul.utils.post_process import ResultSaver
 
-import pyro 
-
-DEBUG=True
+DEBUG=False
 
 class VI_BNN(Inference):
     """
@@ -107,7 +105,7 @@ class VI_BNN(Inference):
                 **self.args
             )
 
-    def fit(self, epochs: int, monitors=None):
+    def fit(self, epochs: int, monitors=None, another_GPU = None):
         if ((monitors is not None) & 
             (('bi_obj' not in self.base_log_dir.as_posix()) 
                 or ('single_obj' not in self.base_log_dir.as_posix()))):
@@ -119,9 +117,14 @@ class VI_BNN(Inference):
                 log_dir = Path(base, "bi_obj", end)
             self.base_log_dir = log_dir
 
+        if another_GPU:
+            GPU = another_GPU
+        else:
+            GPU = self.GPU
+
         self.trainer = pl.Trainer(
             default_root_dir=self.base_log_dir,
-            gpus=[self.GPU], 
+            gpus=[GPU], 
             max_epochs=epochs,
             log_every_n_steps=2,
             logger=self.logger,
@@ -130,19 +133,18 @@ class VI_BNN(Inference):
         if not hasattr(self, 'bnn'):
             self._define_model()
 
+        self.trainer.fit(self.bnn, self.data)
+        
         if epochs > 0:
-            self.trainer.fit(self.bnn, self.data)
             if monitors:
                 return [self.trainer.callback_metrics[monitor] for monitor in monitors]
-        else:
-            raise RuntimeError(f"Cannot fit model for {epochs} epochs.")
+        #else:
+        #    raise RuntimeError(f"Cannot fit model for {epochs} epochs.")
 
 
     def test(self):
         if not hasattr(self, 'bnn'):
             self._define_model()
-
-        print(f"DEVICE OF MODULE : {self.bnn.device}")
         
         tester = pl.Trainer(
             gpus=[self.GPU], 

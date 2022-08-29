@@ -8,11 +8,19 @@ from torch.distributions import Normal
 from bayesrul.utils.miscellaneous import assert_same_shapes
 
 # torch.distributions.normal.cdf ?
-def normal_cdf(x, loc, scale):
-    return 0.5 * (1 + torch.erf(((x - loc) * scale.reciprocal()) / sqrt(2)))
+def normal_cdf(
+    x: torch.tensor, 
+    loc: torch.tensor, 
+    scale: torch.tensor
+) -> torch.tensor:
+    """ Cumulative distribution function of normal law """
+    return 0.5 * (1 + torch.erf(((x - loc) * scale.reciprocal()) / 1.4142135623730951))
 
 
 def p_alphalamba(y_true, y_hat, sigma_hat, alpha=0.05, reduction='mean'):
+    """ A calibration measure
+    doi : 10.1109/ACCESS.2021.3110049 
+    """
     a = normal_cdf((1+alpha) * y_true, y_hat, sigma_hat)
     b = normal_cdf((1-alpha) * y_true, y_hat, sigma_hat)
     
@@ -27,6 +35,7 @@ def p_alphalamba(y_true, y_hat, sigma_hat, alpha=0.05, reduction='mean'):
 
 
 def PICP(y_true, y_hat, sigma_hat, sigma_level=1, reduction='mean'):
+    """ Prediction Interval Coverage Probability """
     assert y_true.shape == y_hat.shape, f"Different shapes {y_true.shape} {y_hat.shape}"
     assert y_true.shape == sigma_hat.shape, f"Different shapes {y_true.shape} {sigma_hat.shape}"
     y = torch.abs(y_true - y_hat)
@@ -43,6 +52,7 @@ def PICP(y_true, y_hat, sigma_hat, sigma_level=1, reduction='mean'):
 
 
 def MPIW(sigma_hat, y_true = None, normalized = False):
+    """ Mean Prediction Interval Width"""
     if normalized:
         if y_true is None:
             raise RuntimeError("Provide y_true to normalize MPIW")
@@ -57,6 +67,7 @@ def MPIW(sigma_hat, y_true = None, normalized = False):
 # Quality Driven Loss
 
 def get_proportion_lists(y_pred, y_std, y_true, num_bins, prop_type='interval'):
+    """ To compute RMSCE """
     exp_proportions = torch.linspace(0, 1, num_bins, device=y_true.get_device())
 
     residuals = y_pred - y_true
@@ -83,7 +94,7 @@ def get_proportion_lists(y_pred, y_std, y_true, num_bins, prop_type='interval'):
 
 
 def rms_calibration_error(y_pred, y_std, y_true, num_bins=100, prop_type='interval'):
-    
+    """ RMSCE computation """
     assert_same_shapes(y_pred, y_std, y_true)
     assert y_std.min() >= 0, "Not all values are positive"
     assert prop_type in ['interval', 'quantile']

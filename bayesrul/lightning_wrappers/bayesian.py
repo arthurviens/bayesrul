@@ -34,6 +34,13 @@ def remove_dict_entry_startswith(dictionary, string):
 
 
 class BnnWrapper(pl.LightningModule):
+    """
+    Pytorch Lightning wrapper for BNNs
+    It implements various functions for Pytorch Lightning to manage train, test,
+    validation, logging...
+
+    This is a base class for VI and MCMC BNNs
+    """
     def __init__(
         self,
         win_length,
@@ -125,6 +132,10 @@ class BnnWrapper(pl.LightningModule):
 
 
 class VIBnnWrapper(BnnWrapper):
+    """
+    Variational BNN Pytorch Lightning class, implements many subtleties needed
+    to make tyxe work with Pytorch Lightning.
+    """
     def __init__(
         self,
         win_length,
@@ -346,6 +357,9 @@ class VIBnnWrapper(BnnWrapper):
 
 
 class MCMCBnnWrapper(BnnWrapper):
+    """
+    Did not find the time to develop this part yet
+    """
     def __init__(
         self,
         win_length,

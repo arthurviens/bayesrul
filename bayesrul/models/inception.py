@@ -110,6 +110,9 @@ class InceptionModuleReducDim(nn.Module):
         self.load_state_dict(state_dict)
 
 class InceptionModel(nn.Module):
+    """
+    Adapted version of Inception model below to have less parameters
+    """
     def __init__(self, win_length, n_features, 
             dropout = 0, activation='relu', bias='True', out_size=2):
         super().__init__()
@@ -169,6 +172,10 @@ class InceptionModel(nn.Module):
 
 
 class BigCeption(nn.Module):
+    """
+    Inception model of DeVol & Al
+    https://papers.phmsociety.org/index.php/phmconf/article/view/3109
+    """
     def __init__(self, win_length, n_features, activation='relu', bias='True',
             dropout=0, out_size=2):
         super().__init__()

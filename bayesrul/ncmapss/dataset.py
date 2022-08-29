@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 from ..utils.lmdb_utils import LmdbDataset
 
 class NCMAPSSLmdbDataset(LmdbDataset):
+    """ Returns features X + rul Y for training purposes """
     def __getitem__(self, i: int):
         sample = super().__getitem__(i)
         rul = self.dtype(super().get(f"rul_{i}", numpy=False))
@@ -11,6 +12,7 @@ class NCMAPSSLmdbDataset(LmdbDataset):
 
 
 class NCMAPSSLmdbDatasetAll(NCMAPSSLmdbDataset):
+    """ Returns features X + other data + rul Y """
     def __getitem__(self, i: int):
         sample, rul = super().__getitem__(i)
         ds_id = int(super().get(f"ds_id_{i}", numpy=False))
@@ -21,6 +23,10 @@ class NCMAPSSLmdbDatasetAll(NCMAPSSLmdbDataset):
 
 
 class NCMAPSSDataModule(pl.LightningDataModule):
+    """
+    Instantiates LMDB reader for train, test and val, and constructs Pytorch
+    Lightning loaders. This is the way to access generated LMDBs
+    """
     def __init__(self, data_path, batch_size, all_dset=False):
         super().__init__()
         self.data_path = data_path
@@ -78,7 +84,7 @@ class NCMAPSSDataModule(pl.LightningDataModule):
         return DataLoader(
             self.datasets["test"],
             batch_size=self.batch_size,
-            shuffle=False, # Important
+            shuffle=False, # Important. do NOT shuffle or results will be false
             num_workers=3,
             pin_memory=True,
         )

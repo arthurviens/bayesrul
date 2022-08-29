@@ -14,6 +14,14 @@ from bayesrul.inference.deep_ensemble import DeepEnsemble
 DEBUG = False
 EPOCHS = 2 if DEBUG else 500
 
+"""
+For a given model ("FLIPOUT" for example), retrieves the best parameters in the file
+results/ncmapss/best_models/FLIPOUT/000.json and trains a model according
+to the hyperparameters stored in this file
+
+Deep ensembles train more epochs, because training examples are asplit among ensembles
+"""
+
 
 def bayesian_or_not(s):
     #s = '_'.join(s.split('_')[:-1])
