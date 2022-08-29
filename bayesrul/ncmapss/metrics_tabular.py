@@ -11,7 +11,7 @@ import torch
 
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
 from bayesrul.utils.metrics import (
-    PICP, MPIW, rms_calibration_error
+    rms_calibration_error, sharpness
 )
 from bayesrul.utils.post_process import ResultSaver
 
@@ -20,7 +20,7 @@ Reads the results of trainings and aggregates all of them to create a single
 LaTeX table for reports.
 """
 
-COLUMNS = ["RMSE-", "NLL-", "RMSCE-", "MPIW-", "|PICP-CI|-"]
+COLUMNS = ["RMSE-", "NLL-", "RMSCE-", "Sharp"]
 
 
 def get_all_metrics(names: List[str]) -> pd.DataFrame:
@@ -53,9 +53,7 @@ def get_all_metrics(names: List[str]) -> pd.DataFrame:
             y_pred = torch.tensor(results['preds'].values, device=torch.device('cuda:0'))
             std = torch.tensor(results['stds'].values, device=torch.device('cuda:0'))
             
-            mpiw = MPIW(std, y_true, normalized=True).cpu().item()
-            picp = PICP(y_true, y_pred, std).cpu().item()
-            picpci = np.abs(picp - 0.6827)
+            sharp = sharpness(std).cpu().item()
             rmsce = rms_calibration_error(y_pred, std, y_true).cpu().item()
             nll = gaussian_nll_loss(
                 y_pred, y_true, std
@@ -65,7 +63,7 @@ def get_all_metrics(names: List[str]) -> pd.DataFrame:
             rmse = torch.sqrt(((y_true - y_pred)**2).mean()).cpu().item()
 
             row = pd.Series(
-                data = [rmse, nll, rmsce, mpiw, picpci],
+                data = [rmse, nll, rmsce, sharp],
                 index = COLUMNS,
                 name=name
             )

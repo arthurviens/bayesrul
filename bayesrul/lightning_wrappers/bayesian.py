@@ -8,7 +8,7 @@ from bayesrul.models.inception import InceptionModel, BigCeption
 from bayesrul.models.linear import Linear
 from bayesrul.models.conv import Conv
 from bayesrul.utils.radial import AutoRadial
-from bayesrul.utils.metrics import p_alphalamba, MPIW, PICP, rms_calibration_error
+from bayesrul.utils.metrics import sharpness, rms_calibration_error
 from tyxe.bnn import VariationalBNN
 from torch.functional import F
 
@@ -264,16 +264,11 @@ class VIBnnWrapper(BnnWrapper):
                 loc, scale = output[:, 0], output[:, 1]
         
         mse = F.mse_loss(y.squeeze(), loc)
-        alambda = p_alphalamba(y.squeeze(), loc, scale).item()
-        picp = PICP(y.squeeze(), loc, scale)
-        mpiw = MPIW(scale, y.squeeze())
         rmsce = rms_calibration_error(loc, scale, y.squeeze())
-
-        self.log("mse/test", mse)
-        self.log('alambda/test', alambda)
-        self.log('mpiw/test', mpiw)
-        self.log('picp/test', picp)
+        sharp = sharpness(scale)
+        self.log('mse/test', mse)
         self.log('rmsce/test', rmsce)
+        self.log('sharp/test', sharp)
 
         try:
             return {"loss": mse, "label": batch[1], "pred": loc.squeeze(), "std": scale}
@@ -302,19 +297,16 @@ class VIBnnWrapper(BnnWrapper):
             kl = self.svi_no_obs.evaluate_loss(x)
         
         mse = F.mse_loss(y.squeeze(), loc)
-        alambda = p_alphalamba(y.squeeze(), loc, scale).item()
-        picp = PICP(y.squeeze(), loc, scale)
-        mpiw = MPIW(scale, y.squeeze())
         rmsce = rms_calibration_error(loc, scale, y.squeeze())
+        sharp = sharpness(scale)
 
         self.log('elbo/val', elbo)
         self.log('mse/val', mse)
         self.log('kl/val', kl)
         self.log('likelihood/val', elbo - kl)
-        self.log('alambda/val', alambda)
-        self.log('mpiw/val', mpiw)
-        self.log('picp/val', picp)
         self.log('rmsce/val', rmsce)
+        self.log('sharp/val', sharp)
+        
         #return {'loss' : mse}
 
 
@@ -345,11 +337,13 @@ class VIBnnWrapper(BnnWrapper):
         
         mse = F.mse_loss(y.squeeze(), loc.squeeze()).item()
         rmsce = rms_calibration_error(loc, scale, y.squeeze())
+        sharp = sharpness(scale)
         self.log('mse/train', mse)
         self.log('elbo/train', elbo)
         self.log('kl/train', kl)
         self.log('likelihood/train', elbo - kl)
         self.log('rmsce/train', rmsce)
+        self.log('sharp/train', sharp)
         #return {'loss' : mse}
 
 

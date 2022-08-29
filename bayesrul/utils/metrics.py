@@ -62,6 +62,13 @@ def MPIW(sigma_hat, y_true = None, normalized = False):
     
     return ((sigma_hat.sum()) * 2) / (len(sigma_hat) * R)
     
+
+def sharpness(sigma_hat):
+    sharp = torch.sqrt(torch.square(sigma_hat).sum()).mean()
+    assert sharp.numel() == 1, f"Sharpness calculated is of shape {sharp.shape}"
+    return sharp
+
+
 # For Hetroscedastic NNs, possibility to explore
 # Hua Zhong, Li Xu: An All-Batch Loss for Constructing Prediction Intervals
 # Quality Driven Loss

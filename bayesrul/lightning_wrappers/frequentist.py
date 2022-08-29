@@ -9,7 +9,7 @@ from bayesrul.models.inception import InceptionModel, BigCeption
 from bayesrul.models.linear import Linear
 from bayesrul.models.conv import Conv
 from bayesrul.utils.miscellaneous import weights_init, enable_dropout
-from bayesrul.utils.metrics import MPIW, PICP, p_alphalamba, rms_calibration_error
+from bayesrul.utils.metrics import rms_calibration_error, sharpness
 
 import numpy as np
 
@@ -115,8 +115,10 @@ class DnnWrapper(pl.LightningModule):
             loss, loc, scale = self._compute_loss(batch, "train", return_pred=True)
             mse = F.mse_loss(loc, batch[1])
             rmsce = rms_calibration_error(loc, scale, batch[1])
+            sharp = sharpness(scale)
             self.log("mse/train", mse)
             self.log("rmsce/train", rmsce)
+            self.log("sharp/train", sharp)
         else:
             loss = self._compute_loss(batch, "train", return_pred=False)
         return loss
@@ -167,21 +169,12 @@ class DnnWrapper(pl.LightningModule):
                     labels = torch.cat([labels, output['label'].detach()])
                     stds = torch.cat([stds, output['std'].detach()])
 
-            mpiw = MPIW(
-                preds, labels, normalized=True
-            )
-            picp = PICP(
-                labels, preds, stds
-            )
-            
-            alambda = p_alphalamba(labels, preds, stds)
             mse = F.mse_loss(preds, labels)
             rmsce = rms_calibration_error(preds, stds, labels)
+            sharp = sharpness(stds)
             self.log("mse/val", mse)
             self.log("rmsce/val", rmsce)
-            self.log(f"mpiw/val", mpiw)
-            self.log(f"picp/val", picp)
-            self.log(f"alambda/val", alambda)
+            self.log("sharp/val", sharp)
 
 
     def test_step(self, batch, batch_idx):
@@ -238,23 +231,12 @@ class DnnWrapper(pl.LightningModule):
 
         if (self.dropout > 0) | (self.loss == 'gaussian_nll'):
             self.test_preds['stds'] = stds.cpu().numpy()
-            mpiw = MPIW(
-                stds, 
-                labels, 
-                normalized=True
-            )
-            picp = PICP(
-                labels,
-                preds,
-                stds,
-            )
-            alambda = p_alphalamba(labels, preds, stds)
+            
             rmsce = rms_calibration_error(preds, stds, labels)
+            sharp = sharpness(stds)
             self.log("rmsce/test", rmsce)
-            self.log(f"mpiw/test", mpiw)
-            self.log(f"picp/test", picp)
-            self.log(f"alambda/test", alambda)
-        
+            self.log("sharp/test", sharp)
+                        
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
@@ -453,9 +435,12 @@ class DeepEnsembleWrapper(pl.LightningModule):
         loss = self.criterion(loc, y, var)
         mse = F.mse_loss(loc, y)
         rmsce = rms_calibration_error(loc, scale, y)
+        sharp = sharpness(scale)
         self.log("mse/train", mse)
         self.log("rmsce/train", rmsce)
         self.log(f"{self.loss}/train", loss)
+        self.log("sharp/train", sharp)
+        
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -481,21 +466,15 @@ class DeepEnsembleWrapper(pl.LightningModule):
                 labels = torch.cat([labels, output['label'].detach()])
                 stds = torch.cat([stds, output['std'].detach()])
 
-        mpiw = MPIW(
-            preds, labels, normalized=True
-        )
-        picp = PICP(
-            labels, preds, stds
-        )
-        alambda = p_alphalamba(labels, preds, stds)
-        mse = F.mse_loss(preds, labels)
         
+        mse = F.mse_loss(preds, labels)
         rmsce = rms_calibration_error(preds, stds, labels)
+        sharp = sharpness(stds)
+        
         self.log("mse/val", mse)
         self.log("rmsce/val", rmsce)
-        self.log(f"mpiw/val", mpiw)
-        self.log(f"picp/val", picp)
-        self.log(f"alambda/val", alambda)
+        self.log("sharp/val", sharp)
+        
 
     def test_step(self, batch, batch_idx):
         loss, loc, var = self._compute_loss(batch, "test", return_pred=True)
@@ -516,25 +495,15 @@ class DeepEnsembleWrapper(pl.LightningModule):
         self.test_preds['labels'] = labels.cpu().numpy()
         self.test_preds['stds'] = stds.cpu().numpy()
 
-        mpiw = MPIW(
-            stds,
-            labels,
-            normalized=True
-        )
-        picp = PICP(
-            labels,
-            preds,
-            stds,
-        )
-        alambda = p_alphalamba(labels, preds, stds)
+        
+        
         mse = F.mse_loss(preds, labels)
         rmsce = rms_calibration_error(preds, stds, labels)
+        sharp = sharpness(stds)
         self.log("rmsce/test", rmsce)
         self.log("mse/test", mse)
-        self.log(f"mpiw/test", mpiw)
-        self.log(f"picp/test", picp)
-        self.log(f"alambda/test", alambda)
-    
+        self.log("sharp/test", sharp)
+        
 
     def configure_optimizers(self):
         params = []
