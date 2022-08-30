@@ -46,32 +46,39 @@ def get_all_data(names: List[str]) -> pd.DataFrame:
     return dfs
 
 
-def std_by_ds_unit(cats: List[str]):
+def col_by_ds_unit(cats: List[str], col="stds"):
+    """ Computes the mean of a column by dataset and unit, for each model
     
+    Parameters
+    ----------
+    cats : list of str
+        Names of the categories of results to process ['LRT', 'FLIPOUT']...  
+
+    Returns : pd.DataFrame
+        df with ds_id and unit_id as index, and the categories as columns
+    """
     dfs = []
     for cat in cats: # Meow
         names = get_dirs_startingby(cat)
         all_family = get_all_data(names)
-        #df = pd.Panel(all_family).mean(axis=0) # Deprecated...
+
         # Compute the mean of all results across all runs of the category
+        #df = pd.Panel(all_family).mean(axis=0) # Deprecated...
         df = pd.concat(all_family).reset_index().groupby('index').mean()
         
         df = post_process(df, data_path='data/ncmapss')
 
         df = df.reset_index().set_index(['index', 'ds_id', 'unit_id'])
-        df = df[['stds']].rename(columns = {'stds': f"{cat}"})
+        df = df[[col]].rename(columns = {col: f"{cat}"})
         dfs.append(df)
     
-    all_stds = pd.concat(dfs, axis=1)
+    all_stds = pd.concat(dfs, axis=1).reset_index().drop(columns={'index'})
 
-    # TODO
-    # TODO
+    by_dsunit = all_stds.groupby(["ds_id", "unit_id"]).mean()
+    by_dsunit['Total'] = by_dsunit.mean(axis=1)
+    by_dsunit = by_dsunit.sort_values("Total")
 
-    for df in dfs:
-        pass
-
-    # TODO
-    # TODO
+    return by_dsunit
 
 def get_all_metrics(names: List[str]) -> pd.DataFrame:
     """ Computes all the wanted metrics for specific result directories
@@ -234,4 +241,4 @@ def latex_formatted(df_mean: pd.DataFrame, df_std: pd.DataFrame) -> str:
 
 
 if __name__ == "__main__":
-    std_by_ds_unit(["LRT", "FLIPOUT"])
+    col_by_ds_unit(["LRT", "FLIPOUT", "RADIAL", "MC_DROPOUT", "DEEP_ENSEMBLE", "HETERO_NN"], "stds")
