@@ -15,7 +15,7 @@ DEBUG=False
 
 class VI_BNN(Inference):
     """
-    Bayesian Neural Network with Variational Inference
+    Bayesian Neural Network with Variational Inference class
     """
 
     def __init__(

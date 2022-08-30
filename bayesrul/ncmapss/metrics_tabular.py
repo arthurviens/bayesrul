@@ -20,7 +20,7 @@ Reads the results of trainings and aggregates all of them to create a single
 LaTeX table for reports.
 """
 
-COLUMNS = ["RMSE-", "NLL-", "RMSCE-", "Sharp"]
+COLUMNS = ["RMSE-", "NLL-", "RMSCE-", "Sharp-"]
 
 
 def get_all_metrics(names: List[str]) -> pd.DataFrame:

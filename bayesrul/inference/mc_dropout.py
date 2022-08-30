@@ -28,7 +28,7 @@ def assert_dropout(model):
 
 class MCDropout(Inference):
     """
-    MC Dropout neural network
+    MC Dropout neural network inference class
     """
 
     def __init__(
