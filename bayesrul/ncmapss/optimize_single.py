@@ -395,7 +395,7 @@ if __name__ == "__main__":
     pruner = optuna.pruners.PatientPruner(optuna.pruners.MedianPruner(), patience=10)
 
     path = Path("results/ncmapss/studies/single_obj")
-    path.mkdir(exist_ok=True)
+    path.mkdir(exist_ok=True, parents=True)
 
     study = optuna.create_study(
         direction="minimize",

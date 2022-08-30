@@ -65,7 +65,7 @@ python -m bayesrul.ncmapss.train_model --bayesian --GPU 0 --model-name My_Model 
 
 It's possible to launch a hyperparameter search for LRT on GPU 0
 ```
-python -m bayesrul.ncmapss.optimize_single --model lrt --study-name LRT --GPU 0 
+python -m bayesrul.ncmapss.optimize_single --model lrt --study-name LRT --sampler TPE --GPU 0 
 ```
 
 In a JSON you can save the best parameter the search tried in the directory and file:

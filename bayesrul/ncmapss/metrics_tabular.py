@@ -13,7 +13,7 @@ from bayesrul.ncmapss.dataset import NCMAPSSDataModule
 from bayesrul.utils.metrics import (
     rms_calibration_error, sharpness
 )
-from bayesrul.utils.post_process import ResultSaver
+from bayesrul.utils.post_process import ResultSaver, post_process
 
 """
 Reads the results of trainings and aggregates all of them to create a single
@@ -22,6 +22,56 @@ LaTeX table for reports.
 
 COLUMNS = ["RMSE-", "NLL-", "RMSCE-", "Sharp-"]
 
+
+def get_all_data(names: List[str]) -> pd.DataFrame:
+    if isinstance(names, str):
+        names = [names]
+
+    dfs = []
+
+    for name in names:
+        try:
+            if bayesian_or_not(name):
+                p = Path("results/ncmapss/bayesian", name)
+            else:
+                p = Path("results/ncmapss/frequentist", name)
+            sav = ResultSaver(p)
+            results = sav.load()
+            
+            dfs.append(results)
+
+        except FileNotFoundError as e:
+            print(f"In get_all_metrics, file not found {e}. Ignoring.")
+
+    return dfs
+
+
+def std_by_ds_unit(cats: List[str]):
+    
+    dfs = []
+    for cat in cats: # Meow
+        names = get_dirs_startingby(cat)
+        all_family = get_all_data(names)
+        #df = pd.Panel(all_family).mean(axis=0) # Deprecated...
+        # Compute the mean of all results across all runs of the category
+        df = pd.concat(all_family).reset_index().groupby('index').mean()
+        
+        df = post_process(df, data_path='data/ncmapss')
+
+        df = df.reset_index().set_index(['index', 'ds_id', 'unit_id'])
+        df = df[['stds']].rename(columns = {'stds': f"{cat}"})
+        dfs.append(df)
+    
+    all_stds = pd.concat(dfs, axis=1)
+
+    # TODO
+    # TODO
+
+    for df in dfs:
+        pass
+
+    # TODO
+    # TODO
 
 def get_all_metrics(names: List[str]) -> pd.DataFrame:
     """ Computes all the wanted metrics for specific result directories
@@ -170,6 +220,10 @@ def fuse_by_category(cats: List[str]) -> Tuple[pd.DataFrame]:
     return df_means, df_stds
 
 
+def results_by_unit(df):
+    pass
+
+
 def latex_formatted(df_mean: pd.DataFrame, df_std: pd.DataFrame) -> str:
     """ Formats Pandas DataFrame into LaTeX table code """
     s = df_mean.style.highlight_min(subset=COLUMNS, 
@@ -180,8 +234,4 @@ def latex_formatted(df_mean: pd.DataFrame, df_std: pd.DataFrame) -> str:
 
 
 if __name__ == "__main__":
-    #df = get_all_metrics(["FLIPOUT", "LRT_nopretrain", 'RADIAL'])
-    #print(df.to_latex())
-    m, sd = fuse_by_category(['LRT', 'FLIPOUT', 'RADIAL', 'MC_DROPOUT', 
-                                'DEEP_ENSEMBLE', 'HETERO_NN'])
-    print(latex_formatted(m, sd))
+    std_by_ds_unit(["LRT", "FLIPOUT"])

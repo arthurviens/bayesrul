@@ -64,7 +64,7 @@ def MPIW(sigma_hat, y_true = None, normalized = False):
     
 
 def sharpness(sigma_hat):
-    sharp = torch.sqrt(torch.square(sigma_hat).sum()).mean()
+    sharp = torch.sqrt(torch.square(sigma_hat).mean())
     assert sharp.numel() == 1, f"Sharpness calculated is of shape {sharp.shape}"
     return sharp
 

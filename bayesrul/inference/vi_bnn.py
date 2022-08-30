@@ -79,7 +79,7 @@ class VI_BNN(Inference):
             pre_net = DnnPretrainWrapper(self.data.win_length, self.data.n_features,
                 archi = self.args.archi)
             pre_trainer = pl.Trainer(gpus=[self.GPU], max_epochs=self.args.pretrain, logger=False,
-                checkpoint_callback=False)
+                enable_checkpointing=False)
 
             pretrain_dir = Path(self.base_log_dir, "lightning_logs",
                 f'version_{self.trainer.logger.version}')
