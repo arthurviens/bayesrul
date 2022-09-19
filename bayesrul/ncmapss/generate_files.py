@@ -22,8 +22,8 @@ if __name__ == "__main__":
         bits=32,      # Size of numbers in memory
     )
 
-    #generate_parquet(args)
+    generate_parquet(args)
     generate_lmdb(args)
     
-    #args.files = ["N-CMAPSS_DS02-006"]
-    #generate_unittest_subsample(args) # To create unit test parquets
+    args.files = ["N-CMAPSS_DS02-006"]
+    generate_unittest_subsample(args) # To create unit test parquets

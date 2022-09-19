@@ -75,7 +75,7 @@ def generate_parquet(args) -> None:
     tr = []; te = []; vl = []
     for i, filename in enumerate(args.files):
         logging.info("**** %s ****" % filename)
-        logging.info("normalization = " + args.normalization)
+        logging.info("normalization = standardization") #+ args.normalization)
         logging.info("validation = " + str(args.validation))
 
         filepath = os.path.join(args.out_path, filename)
@@ -215,17 +215,18 @@ def compute_scalers(args, typ, arg="") -> Any:
     
         columns = val.columns[~(val.columns.str.contains('|'.join(nosearchfor)))]
 
-        total_size += len(train) + len(val) + len(test)
-        for i, df in enumerate([train, val, test]):
+        total_size += len(train) #+ len(val) + len(test)
+        for i, df in enumerate([train]): #, val, test]):
             if summ is None:
                 summ = df[columns].sum(axis=0)
-                std = df[columns].std(axis=0) * len(df)
+                var = df[columns].var(axis=0) * len(df)
             else:
                 summ += df[columns].sum(axis=0)
-                std += df[columns].std(axis=0) * len(df)
+                var += df[columns].var(axis=0) * len(df)
 
     mean = summ / total_size
-    std = std / total_size
+    var = var / total_size
+    std = np.sqrt(var)
 
     return columns, mean, std
 
