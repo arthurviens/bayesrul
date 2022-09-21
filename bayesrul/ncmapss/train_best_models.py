@@ -11,8 +11,9 @@ from bayesrul.inference.dnn import HomoscedasticDNN, HeteroscedasticDNN
 from bayesrul.inference.mc_dropout import MCDropout
 from bayesrul.inference.deep_ensemble import DeepEnsemble
 
+
 DEBUG = False
-EPOCHS = 2 if DEBUG else 500
+EPOCHS = 2 if DEBUG else 5000
 
 """
 For a given model ("FLIPOUT" for example), retrieves the best parameters in the file
@@ -96,7 +97,7 @@ if __name__ == "__main__":
                     "RADIAL, LOWRANK, MC-DROPOUT, DEEP-ENSEMBLE, HETERO-NN")
         
         
-        module.fit(EPOCHS)
+        module.fit(EPOCHS, early_stop=False)
         module.test()
         try:
             module.epistemic_aleatoric_uncertainty(device=torch.device('cpu'))

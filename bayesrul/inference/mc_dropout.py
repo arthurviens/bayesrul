@@ -89,23 +89,34 @@ class MCDropout(Inference):
 
         assert assert_dropout(self.dnn), "MCDropout Model has no dropout layers"
 
-    def fit(self, epochs, monitors=None):
+    def fit(self, epochs, monitors=None, early_stop=False):
         if not hasattr(self, 'dnn'):
             self._define_model()
 
         self.monitor = f"{self.dnn.loss}/val"
         #earlystopping_callback = EarlyStopping(monitor=self.monitor, patience=50)
 
-        self.trainer = pl.Trainer(
-            default_root_dir=self.base_log_dir,
-            gpus=[self.GPU],
-            max_epochs=epochs,
-            log_every_n_steps=2,
-            logger=self.logger,
-            #callbacks=[
-            #    earlystopping_callback,
-            #],
-        )
+        if early_stop:
+            earlystopping_callback = EarlyStopping(monitor="gaussian_nll/val", patience=75)
+            self.trainer = pl.Trainer(
+                default_root_dir=self.base_log_dir,
+                gpus=[GPU], 
+                max_epochs=epochs,
+                log_every_n_steps=2,
+                logger=self.logger,
+                callbacks=[
+                    earlystopping_callback,
+                ],
+            )
+        else:
+            self.trainer = pl.Trainer(
+                default_root_dir=self.base_log_dir,
+                gpus=[GPU], 
+                max_epochs=epochs,
+                log_every_n_steps=2,
+                logger=self.logger,
+            )
+
 
         self.trainer.fit(self.dnn, self.data, ckpt_path=self.checkpoint_file)
 

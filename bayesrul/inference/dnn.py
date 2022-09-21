@@ -75,16 +75,25 @@ class HomoscedasticDNN(Inference):
         self.monitor = f"{self.dnn.loss}/val"
         earlystopping_callback = EarlyStopping(monitor=self.monitor, patience=50)
 
-        self.trainer = pl.Trainer(
-            default_root_dir=self.base_log_dir,
-            gpus=[self.GPU],
-            max_epochs=epochs,
-            log_every_n_steps=2,
-            logger=self.logger,
-            callbacks=[
-                earlystopping_callback,
-            ],
-        )
+        if early_stop:
+            self.trainer = pl.Trainer(
+                default_root_dir=self.base_log_dir,
+                gpus=[self.GPU],
+                max_epochs=epochs,
+                log_every_n_steps=2,
+                logger=self.logger,
+                callbacks=[
+                    earlystopping_callback,
+                ],
+            )
+        else:
+           self.trainer = pl.Trainer(
+                default_root_dir=self.base_log_dir,
+                gpus=[self.GPU],
+                max_epochs=epochs,
+                log_every_n_steps=2,
+                logger=self.logger,
+            ) 
 
         self.trainer.fit(self.dnn, self.data, ckpt_path=self.checkpoint_file)
 

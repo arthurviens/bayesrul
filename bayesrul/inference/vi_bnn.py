@@ -10,6 +10,7 @@ from bayesrul.lightning_wrappers.frequentist import DnnPretrainWrapper
 from bayesrul.lightning_wrappers.bayesian import VIBnnWrapper
 from bayesrul.utils.miscellaneous import get_checkpoint, TBLogger, Dotdict
 from bayesrul.utils.post_process import ResultSaver
+from pytorch_lightning.callbacks import EarlyStopping
 
 DEBUG=False
 
@@ -105,7 +106,7 @@ class VI_BNN(Inference):
                 **self.args
             )
 
-    def fit(self, epochs: int, monitors=None, another_GPU = None):
+    def fit(self, epochs: int, monitors=None, another_GPU = None, early_stop=False):
         if ((monitors is not None) & 
             (('bi_obj' not in self.base_log_dir.as_posix()) 
                 or ('single_obj' not in self.base_log_dir.as_posix()))):
@@ -122,13 +123,26 @@ class VI_BNN(Inference):
         else:
             GPU = self.GPU
 
-        self.trainer = pl.Trainer(
-            default_root_dir=self.base_log_dir,
-            gpus=[GPU], 
-            max_epochs=epochs,
-            log_every_n_steps=2,
-            logger=self.logger,
-        )
+        if early_stop:
+            earlystopping_callback = EarlyStopping(monitor="elbo/val", patience=100)
+            self.trainer = pl.Trainer(
+                default_root_dir=self.base_log_dir,
+                gpus=[GPU], 
+                max_epochs=epochs,
+                log_every_n_steps=2,
+                logger=self.logger,
+                callbacks=[
+                    earlystopping_callback,
+                ],
+            )
+        else:
+            self.trainer = pl.Trainer(
+                default_root_dir=self.base_log_dir,
+                gpus=[GPU], 
+                max_epochs=epochs,
+                log_every_n_steps=2,
+                logger=self.logger,
+            )
 
         if not hasattr(self, 'bnn'):
             self._define_model()
