@@ -7,13 +7,10 @@ import torch
 
 from bayesrul.inference.vi_bnn import VI_BNN
 from bayesrul.ncmapss.dataset import NCMAPSSDataModule
-from bayesrul.inference.dnn import HomoscedasticDNN, HeteroscedasticDNN
+from bayesrul.inference.dnn import HeteroscedasticDNN
 from bayesrul.inference.mc_dropout import MCDropout
 from bayesrul.inference.deep_ensemble import DeepEnsemble
 
-
-DEBUG = False
-EPOCHS = 2 if DEBUG else 5000
 
 """
 For a given model ("FLIPOUT" for example), retrieves the best parameters in the file
@@ -58,8 +55,27 @@ if __name__ == "__main__":
                     metavar='GPU',
                     required=True,
                     help='GPU index (ex: 1)')
+    parser.add_argument('--debug',
+                    action='store_true',
+                    default=False,
+                    help='Whether in debug mode (default: False)')
+    parser.add_argument('--early-stop',
+                    type=int,
+                    default=0,
+                    metavar='EARLY_STOP',
+                    required=True,
+                    help='Early stopping patience (default:0 early stooping disabled')
+    parser.add_argument('--epochs',
+                    type=int,
+                    default=None,
+                    metavar='EPOCHS',
+                    required=True,
+                    help='Number of epochs')
     
     args = parser.parse_args()
+
+    if args.epochs is None:   
+        args.epochs = 2 if args.debug else 1500     
 
 
     path = "results/ncmapss/best_models"
@@ -88,7 +104,6 @@ if __name__ == "__main__":
                 p_dropout = hyp['p_dropout']
                 module = MCDropout(args, data, hyp['p_dropout'], hyp, GPU=args.GPU)
             elif model == "DEEP_ENSEMBLE":
-                EPOCHS = EPOCHS * 3
                 module = DeepEnsemble(args, data, hyp['n_models'], hyp, GPU=args.GPU)
             elif model == "HETERO_NN":
                 module = HeteroscedasticDNN(args, data, hyp, GPU=args.GPU)
@@ -97,7 +112,7 @@ if __name__ == "__main__":
                     "RADIAL, LOWRANK, MC-DROPOUT, DEEP-ENSEMBLE, HETERO-NN")
         
         
-        module.fit(EPOCHS, early_stop=False)
+        module.fit(args.epochs, early_stop=args.early_stop)
         module.test()
         try:
             module.epistemic_aleatoric_uncertainty(device=torch.device('cpu'))
