@@ -13,7 +13,7 @@ from bayesrul.inference.deep_ensemble import DeepEnsemble
 
 
 DEBUG = False
-EPOCHS = 2 if DEBUG else 5000
+EPOCHS = 2 if DEBUG else 500
 
 """
 For a given model ("FLIPOUT" for example), retrieves the best parameters in the file
