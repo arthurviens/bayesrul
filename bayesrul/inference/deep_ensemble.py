@@ -94,7 +94,7 @@ class DeepEnsemble(Inference):
         self.monitor = f"gaussian_nll/val"
 
         if early_stop:
-            earlystopping_callback = EarlyStopping(monitor=self.monitor, patience=75)
+            earlystopping_callback = EarlyStopping(monitor=self.monitor, patience=200)
             self.trainer = pl.Trainer(
                 default_root_dir=self.base_log_dir,
                 gpus=[self.GPU],
