@@ -5,11 +5,11 @@ description = ""
 authors = ["Arthur Viens <arthviens@gmail.com>"]
 
 [tool.poetry.dependencies]
+tyxe = { git = "https://github.com/TyXe-BDL/TyXe.git" }
 python = ">=3.8,<3.11"
 numpy = "^1.22.3"
 pandas = "^1.4.2"
 scikit-learn = "^1.0.2"
-torch = "^1.11.0"
 tqdm = "^4.64.0"
 lmdb = "^1.3.0"
 pytorch-lightning = "^1.6.1"
@@ -17,7 +17,6 @@ bayesian-torch = "^0.2.1"
 ipykernel = "^6.13.0"
 h5py = "^3.6.0"
 matplotlib = "^3.5.1"
-pyro-ppl = "~1.4"
 pyarrow = "^8.0.0"
 jupyterlab = "^3.4.2"
 ipywidgets = "^7.7.0"

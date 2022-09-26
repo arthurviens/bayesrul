@@ -2,7 +2,6 @@
 data/*
 results/*
 .vscode/
-poetry.lock
 *lightning_logs/*
 notebooks/lightning_logs/*
 save/*
