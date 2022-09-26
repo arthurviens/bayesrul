@@ -9,25 +9,9 @@ git clone git@github.com:arthurviens/bayesrul.git
 cd bayesrul
 ```
 
-Create a new environment (python 3.8 and 3.9 supported)
-```
-conda create -n bayesrul python=3.8
-conda activate bayesrul
-```
-
-Install poetry to manage all the dependencies for you
-```
-pip install poetry
-```
-
 Use poetry to install dependencies
 ```
 poetry install
-```
-
-TyXe has to be installed by hand, as it is not on PyPI
-```
-pip install git+https://github.com/TyXe-BDL/TyXe.git
 ```
 
 ## Generate dataset lmdb files for N-CMAPSS
